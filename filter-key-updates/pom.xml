@@ -125,25 +125,6 @@
   <build>
     <plugins>
       <plugin>
-        <groupId>com.bazaarvoice.maven.plugins</groupId>
-        <artifactId>s3-upload-maven-plugin</artifactId>
-        <version>2.0.3</version>
-        <configuration>
-          <source>${project.build.directory}/${project.build.finalName}.jar</source>
-          <bucketName>${bucketName}</bucketName>
-          <destination>${bucketKey}/${project.build.finalName}.jar</destination>
-        </configuration>
-        <executions>
-          <execution>
-            <id>deploy-to-s3</id>
-            <phase>deploy</phase>
-            <goals>
-              <goal>s3-upload</goal>
-            </goals>
-          </execution>
-        </executions>
-      </plugin>
-      <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
         <version>3.14.0</version>
@@ -188,14 +169,6 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
         <version>3.5.3</version>
-      </plugin>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-deploy-plugin</artifactId>
-        <version>3.1.4</version>
-        <configuration>
-          <skip>true</skip>
-        </configuration>
       </plugin>
     </plugins>
   </build>

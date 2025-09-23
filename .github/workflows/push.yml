@@ -48,9 +48,11 @@ jobs:
             --tag "${{ vars.ECR_REGISTRY }}/${{ vars.ECR_REPO }}:${GITHUB_REF_NAME}"
           docker push "${{ vars.ECR_REGISTRY }}/${{ vars.ECR_REPO }}:${GITHUB_REF_NAME}"
 
-      - name: Build and push filter key updates lambda artifact to S3
+      - name: Build filter key updates lambda artifact
         working-directory: ./filter-key-updates
         run: |
-          ./mvnw -e -B deploy -Djgitver.use-version=${{ github.ref_name }} \
-            -DbucketName=${{ vars.S3_BUCKET }} \
-            -DbucketKey=${{ vars.S3_BUCKET_KEY }}
+          ./mvnw -e -B verify -Djgitver.use-version=${{ github.ref_name }}
+
+      - name: Upload filter key updates artifact to S3
+        working-directory: ./filter-key-updates
+        run: aws s3 cp target/filter-key-updates-lambda-${{ github.ref_name }}.jar s3://${{ vars.S3_BUCKET }}/${{ vars.S3_BUCKET_KEY }}/

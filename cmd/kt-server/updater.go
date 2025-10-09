@@ -76,7 +76,7 @@ func updater(tree *transparency.Tree, ch chan updateRequest, auditorTreeHeadsCh 
 					// If the channel receives a tombstone update, process the batch of updates so far
 					// and then handle the tombstone update separately to preserve the ordering of the updates
 					// as they're received from the channel.
-					if isTombstoneUpdate(first.req.GetUpdateRequest()) {
+					if isTombstoneUpdate(req.req.GetUpdateRequest()) {
 						tombstoneUpdate = &req
 						break loop
 					} else {

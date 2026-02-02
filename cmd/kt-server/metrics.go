@@ -6,6 +6,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/pprof"
@@ -14,6 +15,7 @@ import (
 	"github.com/hashicorp/go-metrics/datadog"
 	"github.com/hashicorp/go-metrics/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	ktmetrics "github.com/signalapp/keytransparency/cmd/kt-server/metrics"
 	"google.golang.org/grpc/status"
 
 	"github.com/signalapp/keytransparency/cmd/internal/util"
@@ -40,12 +42,13 @@ func endpointLabel(endpoint string) metrics.Label {
 	return metrics.Label{Name: "endpoint", Value: endpoint}
 }
 
-func exportMetrics(addr string) {
+func exportMetrics(ctx context.Context, addr string, otlpEnabled bool) {
 	prom, err := prometheus.NewPrometheusSink()
 	if err != nil {
 		util.Log().Fatalf("building prometheus sink: %v", err)
 	}
 	sink := metrics.FanoutSink{prom}
+	defer sink.Shutdown()
 
 	if addr != "" {
 		util.Log().Infof("Initiating datadog metrics at %q", addr)
@@ -54,6 +57,15 @@ func exportMetrics(addr string) {
 			util.Log().Fatalf("error initializing statsd client: %v", err)
 		}
 		sink = append(sink, ddog)
+	}
+
+	if otlpEnabled {
+		util.Log().Infof("Initiating otlp metrics")
+		otlpSink, err := ktmetrics.NewOTLPSink(ctx)
+		if err != nil {
+			util.Log().Fatalf("error initializing otlp client: %v", err)
+		}
+		sink = append(sink, otlpSink)
 	}
 
 	// Disable hostname tagging, this can be provided by the downstream sink

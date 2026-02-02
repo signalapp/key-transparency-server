@@ -94,7 +94,7 @@ func main() {
 	go healthServer.Serve(lis)
 
 	// Start the metrics server.
-	exportMetrics(config.DatadogAddr)
+	exportMetrics(ctx, config.DatadogAddr, config.OtlpEnabled)
 	go metricsServer(config.MetricsAddr)
 
 	// Start the inserter thread.

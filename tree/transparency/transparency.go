@@ -16,6 +16,7 @@ import (
 	"crypto/subtle"
 	"errors"
 	"fmt"
+	stdmath "math"
 	"slices"
 	"time"
 
@@ -47,6 +48,7 @@ var (
 	ErrInvalidArgument    = errors.New("invalid request argument")
 	ErrOutOfRange         = errors.New("querying past end of log")
 	ErrFailedPrecondition = errors.New("failed precondition")
+	ErrDuplicateUpdate    = errors.New("duplicate update")
 )
 
 type ErrAuditorSignatureVerificationFailed struct {
@@ -338,23 +340,26 @@ func (t *Tree) Search(req *pb.TreeSearchRequest) (*pb.TreeSearchResponse, error)
 	}, nil
 }
 
-type PreUpdateState struct {
-	req      *pb.UpdateRequest
-	index    [32]byte
-	vrfProof []byte
-	value    []byte
-	cache    map[uint64][]byte
+type previousValue struct {
+	pos   uint64
+	value []byte
 }
 
-func (p *PreUpdateState) GetUpdateRequest() *pb.UpdateRequest {
-	return p.req
+type PreUpdateState struct {
+	Req      *pb.UpdateRequest
+	Index    [32]byte
+	vrfProof []byte
+	Value    []byte
+
+	cache map[uint64][]byte
+	prev  *previousValue
 }
 
 // PreUpdate does any calculations required for an Update operation that can be
 // performed ahead of entering the critical path.
 func (t *Tree) PreUpdate(req *pb.UpdateRequest) (*PreUpdateState, error) {
 	index, vrfProof := t.config.VrfKey.ECVRFProve(req.SearchKey)
-	value, err := marshalUpdateValue(&pb.UpdateValue{Value: req.Value})
+	currValue, err := marshalUpdateValue(&pb.UpdateValue{Value: req.Value})
 	if err != nil {
 		return nil, err
 	}
@@ -362,14 +367,33 @@ func (t *Tree) PreUpdate(req *pb.UpdateRequest) (*PreUpdateState, error) {
 	// Lookup this index in the prefix tree to build a cache of what prefix tree entries will
 	// be needed.
 	t.cacheControl.StartTracking()
-	t.prefixTree.Trace(t.latest.TreeSize, index[:])
+
+	pos, err := t.prefixTree.Trace(t.latest.TreeSize, [][]byte{index[:]})
+	if err != nil {
+		metrics.IncrCounterWithLabels([]string{"preupdate.error"}, 1, []metrics.Label{{Name: "source", Value: "prefix_tree"}})
+		t.cacheControl.StopTracking()
+		return nil, err
+	}
+
+	// If this index exists in the log, load its current value into cache.
+	var prev *previousValue
+	if pos[0] != stdmath.MaxUint64 {
+		value, err := t.tx.Get(pos[0])
+		if err != nil {
+			metrics.IncrCounterWithLabels([]string{"preupdate.error"}, 1, []metrics.Label{{Name: "source", Value: "transparency_tree"}})
+			t.cacheControl.StopTracking()
+			return nil, err
+		}
+		prev = &previousValue{pos: pos[0], value: value}
+	}
+
 	cache := t.cacheControl.ExportCache()
 	// t.cacheControl.StopTracking() -- This is called in PostUpdate because
 	// it's helpful to keep the cache around until then. This may need to be
 	// called explicitly if there are more methods being called on the tree
 	// between PreUpdate and PostUpdate.
 
-	return &PreUpdateState{req, index, vrfProof, value, cache}, nil
+	return &PreUpdateState{req, index, vrfProof, currValue, cache, prev}, nil
 }
 
 type PostUpdateState struct {
@@ -377,22 +401,28 @@ type PostUpdateState struct {
 	opening []byte
 	sr      *prefix.SearchResult
 	head    *db.TransparencyTreeHead
+
+	err error
 }
 
 // PostUpdate does any calculations required to finish an Update operation that
 // can be performed after exiting the critical path.
 func (t *Tree) PostUpdate(state *PostUpdateState) (*pb.UpdateResponse, error) {
+	if state.err != nil {
+		return nil, state.err
+	}
+
 	t.latest = state.head
 
 	// Build a search proof for the newly-added value.
-	searchProof, err := t.search(state.pre.index, state.sr.FirstUpdatePosition, state.sr.LatestUpdatePosition, true)
+	searchProof, err := t.search(state.pre.Index, state.sr.FirstUpdatePosition, state.sr.LatestUpdatePosition, true)
 	if err != nil {
 		return nil, err
 	}
 	t.cacheControl.StopTracking()
 
 	// Build the final UpdateResponse to return.
-	fth, err := t.fullTreeHead(state.pre.req.Consistency)
+	fth, err := t.fullTreeHead(state.pre.Req.Consistency)
 	if err != nil {
 		return nil, err
 	}
@@ -412,12 +442,12 @@ func (t *Tree) PostUpdate(state *PostUpdateState) (*pb.UpdateResponse, error) {
 // to prevent incorrect state resulting from a race between the tombstone update and another user claiming
 // the old identifier.
 func (t *Tree) UpdateExistingIndexWithTombstoneValue(state *PreUpdateState) (*PostUpdateState, error) {
-	searchKeyTypeLabel, err := GetSearchKeyTypeLabel(state.GetUpdateRequest().GetSearchKey())
+	searchKeyTypeLabel, err := GetSearchKeyTypeLabel(state.Req.GetSearchKey())
 	if err != nil {
 		return nil, err
 	}
 
-	result, err := t.prefixTree.Search(t.latest.TreeSize, state.index[:])
+	result, err := t.prefixTree.Search(t.latest.TreeSize, state.Index[:])
 	if err != nil {
 		if gprcError, ok := status.FromError(err); ok && gprcError.Code() == codes.NotFound {
 			metrics.IncrCounterWithLabels([]string{"tombstone_update.index_not_found"}, 1, []metrics.Label{searchKeyTypeLabel})
@@ -435,7 +465,7 @@ func (t *Tree) UpdateExistingIndexWithTombstoneValue(state *PreUpdateState) (*Po
 		return nil, err
 	}
 
-	if !bytes.Equal(updateValue.GetValue(), state.req.GetExpectedPreUpdateValue()) {
+	if !bytes.Equal(updateValue.GetValue(), state.Req.GetExpectedPreUpdateValue()) {
 		// We would hit this case if another user claimed the old identifier, and their update made it into the log
 		// before the tombstone update did. Abort the tombstone update with no error.
 		metrics.IncrCounterWithLabels([]string{"tombstone_update.unexpected_pre_update_value"}, 1, []metrics.Label{searchKeyTypeLabel})
@@ -450,27 +480,10 @@ func (t *Tree) UpdateExistingIndexWithTombstoneValue(state *PreUpdateState) (*Po
 
 }
 
-// BatchUpdate takes in a batch of PreUpdateStates, each containing a search key and the key's new value,
-// and applies the updates to the log.
+// BatchUpdate takes in a batch of PreUpdateStates, each containing a search key
+// and the key's new value, and applies the updates to the log.
 func (t *Tree) BatchUpdate(states []*PreUpdateState) ([]*PostUpdateState, error) {
-	openings := make([][]byte, len(states))
-	entries := make([]prefix.Entry, len(states))
-	for i, state := range states {
-		treeSize := t.latest.TreeSize + uint64(i)
-
-		// Compute the commitment opening and the commitment itself.
-		opening := computeOpening(t.config.OpeningKey, treeSize)
-		commitment, err := commitments.Commit(state.req.SearchKey, state.value, opening)
-		if err != nil {
-			return nil, err
-		}
-
-		openings[i] = opening
-		entries[i] = prefix.Entry{Index: state.index[:], Commitment: commitment}
-
-		// Add journal entry.
-		t.tx.Put(treeSize, state.value)
-	}
+	out := make([]*PostUpdateState, len(states))
 
 	// Collate the prefix tree data cached by each update.
 	for _, state := range states {
@@ -479,16 +492,133 @@ func (t *Tree) BatchUpdate(states []*PreUpdateState) ([]*PostUpdateState, error)
 			return nil, err
 		}
 	}
+	defer t.cacheControl.StopTracking()
+
+	// Collate all of the provided values for the different indices for easier
+	// access later.
+	logEntryToVal := make(map[uint64][]byte)
+	for _, state := range states {
+		if state.prev != nil {
+			if other, ok := logEntryToVal[state.prev.pos]; !ok {
+				logEntryToVal[state.prev.pos] = state.prev.value
+			} else if !bytes.Equal(other, state.prev.value) {
+				return nil, errors.New("different values given for same log entry")
+			}
+		}
+	}
+
+	// Our goal in the entire remainder of this function is to filter out update
+	// requests that would set an index to the same value that it already has.
+	// While not strictly required for the integrity of the log, these updates 
+	// would make it impossible for clients to monitor a key for unexpected changes.
+
+	// First, check if we can find `states` elements that duplicate a
+	// previous element. Filter them out if so.
+	firstUpdate := make(map[[32]byte]int) // First observed update for an index.
+	lastUpdate := make(map[[32]byte]int)  // Last observed update for an index.
+
+	for i, state := range states {
+		if _, ok := firstUpdate[state.Index]; !ok {
+			firstUpdate[state.Index] = i
+		}
+		prev, ok := lastUpdate[state.Index]
+		if ok && bytes.Equal(states[prev].Value, state.Value) {
+			out[i] = &PostUpdateState{err: ErrDuplicateUpdate}
+			continue
+		}
+		lastUpdate[state.Index] = i
+	}
+
+	// The `firstUpdate` map maps every index that we're updating to the
+	// position of the first update request for that index in `states`. Check if
+	// these update requests duplicate the currently stored value in the
+	// database.
+	indices := make([][]byte, 0, len(firstUpdate))
+	statesPos := make([]int, 0, len(firstUpdate))
+	for index, i := range firstUpdate {
+		indices = append(indices, index[:])
+		statesPos = append(statesPos, i)
+	}
+	// Search the prefix tree again to ensure that we have the most up-to-date
+	// log entry for each index.
+	logEntries, err := t.prefixTree.Trace(t.latest.TreeSize, indices)
+	if err != nil {
+		return nil, err
+	}
+	for i, pos := range logEntries {
+		if pos == stdmath.MaxUint64 { // The index doesn't exist yet.
+			continue
+		}
+		// If the log entry we need was provided as part of the request cache,
+		// check the new value against the cache.
+		prevVal, ok := logEntryToVal[pos]
+		if ok {
+			if bytes.Equal(states[statesPos[i]].Value, prevVal) {
+				out[statesPos[i]] = &PostUpdateState{err: ErrDuplicateUpdate}
+			}
+			continue
+		}
+		// The log entry we need wasn't provided, which means the index was
+		// updated between when the update request was generated and this point.
+		// It's likely still cached -- we'll see a performance hit if not.
+		val, err := t.tx.Get(pos)
+		if err != nil {
+			return nil, err
+		} else if bytes.Equal(states[statesPos[i]].Value, val) {
+			out[statesPos[i]] = &PostUpdateState{err: ErrDuplicateUpdate}
+		}
+	}
+
+	// Now we need to call batchUpdate with the remaining update requests that
+	// are not duplicate and weave the results back into our full `out` slice.
+	remainingStates := make([]*PreUpdateState, 0, len(states))
+	nilIndices := make([]int, 0, len(states))
+	for i, post := range out {
+		if post == nil {
+			remainingStates = append(remainingStates, states[i])
+			nilIndices = append(nilIndices, i)
+		}
+	}
+	results, err := t.batchUpdate(remainingStates)
+	if err != nil {
+		return nil, err
+	}
+	for i, idx := range nilIndices {
+		out[idx] = results[i]
+	}
+	return out, nil
+}
+
+func (t *Tree) batchUpdate(states []*PreUpdateState) ([]*PostUpdateState, error) {
+	if len(states) == 0 {
+		return nil, nil
+	}
+
+	// Prepare the commitment opening and prefix tree entry for each change.
+	openings := make([][]byte, len(states))
+	entries := make([]prefix.Entry, len(states))
+	for i, state := range states {
+		treeSize := t.latest.TreeSize + uint64(i)
+
+		// Compute the commitment opening and the commitment itself.
+		opening := computeOpening(t.config.OpeningKey, treeSize)
+		commitment, err := commitments.Commit(state.Req.SearchKey, state.Value, opening)
+		if err != nil {
+			return nil, err
+		}
+
+		openings[i] = opening
+		entries[i] = prefix.Entry{Index: state.Index[:], Commitment: commitment}
+
+		// Add journal entry.
+		t.tx.Put(treeSize, state.Value)
+	}
 
 	// Update indexes in the prefix tree.
 	roots, srs, err := t.prefixTree.BatchInsert(t.latest.TreeSize, entries, false)
 	if err != nil {
 		return nil, err
 	}
-
-	// There are no more prefix tree operations required at this point, so clear the prefix tree cache to prevent
-	// unbounded memory growth.
-	t.cacheControl.StopTracking()
 
 	// Insert into the log tree.
 	values := make([][]byte, len(states))
@@ -519,7 +649,7 @@ func (t *Tree) BatchUpdate(states []*PreUpdateState) ([]*PostUpdateState, error)
 	// Build output and return.
 	out := make([]*PostUpdateState, len(states))
 	for i, state := range states {
-		out[i] = &PostUpdateState{state, openings[i], srs[i], head}
+		out[i] = &PostUpdateState{state, openings[i], srs[i], head, nil}
 	}
 	return out, nil
 }
@@ -879,7 +1009,7 @@ func (t *Tree) SetAuditorHead(head *pb.AuditorTreeHead, auditorName string) erro
 	}
 	temp := &pb.FullAuditorTreeHead{TreeHead: head}
 	if auditorPublicKey, ok := t.config.AuditorKeys[auditorName]; !ok {
-		return errors.New(fmt.Sprintf("failed to get auditor public key for auditor: %s", auditorName))
+		return fmt.Errorf("failed to get auditor public key for auditor: %s", auditorName)
 	} else if err := verifyAuditorTreeHead(t.config.Public(), temp, root, auditorPublicKey); err != nil {
 		return err
 	}

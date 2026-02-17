@@ -13,6 +13,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"math"
 	"runtime"
 
 	"google.golang.org/grpc/codes"
@@ -148,18 +149,39 @@ func (t *Tree) Search(treeSize uint64, index []byte) (*SearchResult, error) {
 }
 
 // Trace performs the same database lookups in the same order as Search, without
-// computing the intermediate hashes to produce a full search result. This is
-// used for populating caches.
-func (t *Tree) Trace(treeSize uint64, index []byte) error {
-	search, err := t.BatchSearch(treeSize, index)
-	if err != nil {
-		return fmt.Errorf("creating search: %w", err)
+// computing the intermediate hashes to produce a full search result.
+//
+// Returns the log position that the search for each index ended at. If an index was not found, its value will be math.MaxUint64.
+func (t *Tree) Trace(treeSize uint64, indices [][]byte) ([]uint64, error) {
+	if treeSize == 0 {
+		out := make([]uint64, len(indices))
+		for i := range out {
+			out[i] = math.MaxUint64
+		}
+		return out, nil
 	}
-	_, _, err = newSearchBatch(t.aesKey, t.tx, []*Search{search}).exec(true)
-	if err != nil {
-		return err
+
+	searches := make([]*Search, len(indices))
+	for i, index := range indices {
+		search, err := t.BatchSearch(treeSize, index)
+		if err != nil {
+			return nil, fmt.Errorf("creating search: %w", err)
+		}
+		searches[i] = search
 	}
-	return nil
+	positions, results, err := newSearchBatch(t.aesKey, t.tx, searches).exec(true)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]uint64, len(positions))
+	for i, pos := range positions {
+		if _, ok := results[i].(*cachedLogEntry); ok {
+			out[i] = pos
+		} else {
+			out[i] = math.MaxUint64
+		}
+	}
+	return out, nil
 }
 
 // InsertFake changes the tree like a random new entry was inserted, without

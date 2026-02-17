@@ -529,7 +529,6 @@ func TestMultipleUpdatesToSameKeyInBatch(t *testing.T) {
 			Value:       []byte(v),
 			Consistency: &pb.Consistency{},
 		})
-
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -538,7 +537,6 @@ func TestMultipleUpdatesToSameKeyInBatch(t *testing.T) {
 	}
 
 	_, err := tree.BatchUpdate(states)
-
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -550,9 +548,7 @@ func TestMultipleUpdatesToSameKeyInBatch(t *testing.T) {
 	res, err := tree.Search(req)
 	if err != nil {
 		t.Fatal(err)
-	}
-
-	if !bytes.Equal(res.Value.Value, []byte(values[len(values)-1])) {
+	} else if !bytes.Equal(res.Value.Value, []byte(values[len(values)-1])) {
 		t.Fatal("unexpected mapped value")
 	}
 
@@ -562,10 +558,96 @@ func TestMultipleUpdatesToSameKeyInBatch(t *testing.T) {
 			maxCtr = ctr
 		}
 	}
-
 	if maxCtr != uint32(len(values)-1) {
 		t.Fatal("unexpected search key ctr")
 	}
+}
+
+func TestUpdateRejectsDuplicates(t *testing.T) {
+	tree, _, _, _ := NewTree(t, transparency.ContactMonitoring)
+
+	// Utility function to generate a list of PreUpdateStates changing a fixed
+	// search key to a given value.
+	makeStates := func(vals [][]byte) []*transparency.PreUpdateState {
+		states := make([]*transparency.PreUpdateState, len(vals))
+
+		for i, val := range vals {
+			preUpdate, err := tree.PreUpdate(&pb.UpdateRequest{
+				SearchKey:   []byte("searchKey"),
+				Value:       val,
+				Consistency: &pb.Consistency{},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			states[i] = preUpdate
+		}
+
+		return states
+	}
+	// Utility function to check whether each PostUpdateState in a list was
+	// rejected for being a duplicate update or not.
+	checkResults := func(results []*transparency.PostUpdateState, dup []bool) {
+		if len(results) != len(dup) {
+			t.Fatal("unexpected number of responses received")
+		}
+		for i, res := range results {
+			_, err := tree.PostUpdate(res)
+			if dup[i] && err != transparency.ErrDuplicateUpdate {
+				t.Fatalf("unexpected error: %v", err)
+			} else if !dup[i] && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		}
+	}
+
+	// Test case 1: no duplicates.
+	states := makeStates([][]byte{[]byte("value1"), []byte("value2"), []byte("value3")})
+	results, err := tree.BatchUpdate(states)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkResults(results, []bool{false, false, false})
+
+	// Test case 2: duplicate within set of requests.
+	states = makeStates([][]byte{[]byte("value4"), []byte("value4"), []byte("value5")})
+	results, err = tree.BatchUpdate(states)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkResults(results, []bool{false, true, false})
+
+	// Test case 3: duplicate with initial value.
+	states = makeStates([][]byte{[]byte("value5"), []byte("value6")})
+	results, err = tree.BatchUpdate(states)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkResults(results, []bool{true, false})
+
+	// Test case 4: duplicate with initial value but incorrect cache is provided.
+	states = makeStates([][]byte{[]byte("value7"), []byte("value8")})
+
+	other := makeStates([][]byte{[]byte("value7")})
+	results, err = tree.BatchUpdate(other)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkResults(results, []bool{false})
+
+	results, err = tree.BatchUpdate(states)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkResults(results, []bool{true, false})
+
+	// Test case 5: value flip-flops are ok
+	states = makeStates([][]byte{[]byte("value9"), []byte("value10"), []byte("value9")})
+	results, err = tree.BatchUpdate(states)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkResults(results, []bool{false, false, false})
 }
 
 func BenchmarkUpdate1(b *testing.B) {

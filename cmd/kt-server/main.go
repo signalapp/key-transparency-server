@@ -15,7 +15,9 @@ import (
 	"io"
 	"net"
 	"os"
+	"os/signal"
 	"runtime"
+	"syscall"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -42,7 +44,8 @@ var (
 
 func main() {
 	flag.Parse()
-	ctx := context.Background()
+	ctx, _ := signal.NotifyContext(context.Background(), syscall.SIGTERM)
+
 	consoleWriter := zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339}
 
 	// Load config from disk.

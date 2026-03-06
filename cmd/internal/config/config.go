@@ -129,6 +129,8 @@ type StreamConfig struct {
 	E164StreamName     envstr `yaml:"e164-stream-name"`
 	UsernameStreamName envstr `yaml:"username-stream-name"`
 
+	NewStreams []string `yaml:"new-streams"`
+
 	// If TableName is not provided, backfill will not be attempted.
 	TableName envstr `yaml:"table"`
 }

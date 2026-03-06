@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"slices"
 	"syscall"
 	"time"
 
@@ -204,7 +205,16 @@ func main() {
 					config.StreamConfig.E164StreamName.String():     updateFromE164Stream,
 					config.StreamConfig.UsernameStreamName.String(): updateFromUsernameStream,
 				} {
+					streamStartTimestamp = nil
+					if slices.Contains(config.StreamConfig.NewStreams, streamName) {
+						start := time.Now().Add(-time.Minute * 15)
+						streamStartTimestamp = &start
+					}
+
 					util.Log().Infof("Starting stream processing from Kinesis stream: %s", streamName)
+					if streamStartTimestamp != nil {
+						util.Log().Infof("%s stream start timestamp: %s", streamName, streamStartTimestamp.Format(time.RFC3339))
+					}
 					go func() {
 						s.run(ctx, streamName, streamStartTimestamp, updateHandler, updateFromStreamFunc)
 					}()

@@ -20,9 +20,8 @@ import (
 )
 
 var (
+	validAci2            = random(16)
 	validAciIdentityKey2 = createDistinctValue(validAciIdentityKey1)
-	validUsernameHash2   = createDistinctValue(validUsernameHash1)
-	validPhoneNumber2    = "+14155550102"
 )
 
 type mockLogUpdater struct {
@@ -40,136 +39,84 @@ type expectedUpdateInputs struct {
 	preUpdateValue []byte
 }
 
-var testUpdateAccountPairs = []struct {
-	prev                 *account
-	next                 *account
-	expectedNumUpdates   int
-	expectedUpdateInputs []expectedUpdateInputs
-}{
+var testUpdateAciPairs = []testCase[aci]{
 	// No change
 	{
-		&account{ACI: validAci1, ACIIdentityKey: validAciIdentityKey1, UsernameHash: validUsernameHash1, Number: validPhoneNumber1},
-		&account{ACI: validAci1, ACIIdentityKey: validAciIdentityKey1, UsernameHash: validUsernameHash1, Number: validPhoneNumber1},
+		&streamPair[aci]{
+			Prev: &aci{
+				ACI:            validAci1,
+				ACIIdentityKey: validAciIdentityKey1,
+			},
+			Next: &aci{
+				ACI:            validAci1,
+				ACIIdentityKey: validAciIdentityKey1,
+			},
+		},
 		0,
 		[]expectedUpdateInputs{},
 	},
-	// New registration
+	// Add ACI
 	{
-		nil,
-		&account{ACI: validAci1, ACIIdentityKey: validAciIdentityKey1, UsernameHash: validUsernameHash1, Number: validPhoneNumber1},
-		3,
+		&streamPair[aci]{
+			Prev: nil,
+			Next: &aci{
+				ACI:            validAci1,
+				ACIIdentityKey: validAciIdentityKey1,
+			},
+		},
+		1,
 		[]expectedUpdateInputs{
 			{key: append([]byte{shared.AciPrefix}, validAci1...), value: marshalValue(validAciIdentityKey1), preUpdateValue: nil},
-			{key: append([]byte{shared.NumberPrefix}, []byte(validPhoneNumber1)...), value: marshalValue(validAci1), preUpdateValue: nil},
-			{key: append([]byte{shared.UsernameHashPrefix}, validUsernameHash1...), value: marshalValue(validAci1), preUpdateValue: nil}},
+		},
 	},
-	// Re-registration - the server sets the old username to null but keeps it reserved for the client to reclaim
+	// Update ACI mapping
 	{
-		&account{ACI: validAci1, ACIIdentityKey: validAciIdentityKey1, UsernameHash: validUsernameHash1, Number: validPhoneNumber1},
-		&account{ACI: validAci1, ACIIdentityKey: validAciIdentityKey2, Number: validPhoneNumber1},
-		2,
+		&streamPair[aci]{
+			Prev: &aci{
+				ACI:            validAci1,
+				ACIIdentityKey: validAciIdentityKey1,
+			},
+			Next: &aci{
+				ACI:            validAci1,
+				ACIIdentityKey: validAciIdentityKey2,
+			},
+		},
+		1,
 		[]expectedUpdateInputs{
 			{key: append([]byte{shared.AciPrefix}, validAci1...), value: marshalValue(validAciIdentityKey2), preUpdateValue: nil},
-			{key: append([]byte{shared.UsernameHashPrefix}, validUsernameHash1...), value: tombstoneBytes, preUpdateValue: marshalValue(validAci1)}},
+		},
 	},
-	// Re-registration - client reclaims username
+	// Delete ACI
 	{
-		&account{ACI: validAci1, ACIIdentityKey: validAciIdentityKey2, Number: validPhoneNumber1},
-		&account{ACI: validAci1, ACIIdentityKey: validAciIdentityKey2, UsernameHash: validUsernameHash1, Number: validPhoneNumber1},
+		&streamPair[aci]{
+			Prev: &aci{
+				ACI:            validAci1,
+				ACIIdentityKey: validAciIdentityKey1,
+			},
+			Next: nil,
+		},
 		1,
 		[]expectedUpdateInputs{
-			{key: append([]byte{shared.UsernameHashPrefix}, validUsernameHash1...), value: marshalValue(validAci1), preUpdateValue: nil}},
-	},
-	// Some re-registrations do not change the identity key
-	{
-		&account{ACI: validAci1, ACIIdentityKey: validAciIdentityKey1, UsernameHash: validUsernameHash1, Number: validPhoneNumber1},
-		&account{ACI: validAci1, ACIIdentityKey: validAciIdentityKey1, Number: validPhoneNumber1},
-		1,
-		[]expectedUpdateInputs{
-			{key: append([]byte{shared.UsernameHashPrefix}, validUsernameHash1...), value: tombstoneBytes, preUpdateValue: marshalValue(validAci1)}},
-	},
-	// Account deletion with username
-	{
-		&account{ACI: validAci1, ACIIdentityKey: validAciIdentityKey1, UsernameHash: validUsernameHash1, Number: validPhoneNumber1},
-		nil,
-		3,
-		[]expectedUpdateInputs{
 			{key: append([]byte{shared.AciPrefix}, validAci1...), value: tombstoneBytes, preUpdateValue: marshalValue(validAciIdentityKey1)},
-			{key: append([]byte{shared.NumberPrefix}, []byte(validPhoneNumber1)...), value: tombstoneBytes, preUpdateValue: marshalValue(validAci1)},
-			{key: append([]byte{shared.UsernameHashPrefix}, validUsernameHash1...), value: tombstoneBytes, preUpdateValue: marshalValue(validAci1)}},
-	},
-	// Account deletion with no username
-	{
-		&account{ACI: validAci1, ACIIdentityKey: validAciIdentityKey1, Number: validPhoneNumber1},
-		nil,
-		2,
-		[]expectedUpdateInputs{
-			{key: append([]byte{shared.AciPrefix}, validAci1...), value: tombstoneBytes, preUpdateValue: marshalValue(validAciIdentityKey1)},
-			{key: append([]byte{shared.NumberPrefix}, []byte(validPhoneNumber1)...), value: tombstoneBytes, preUpdateValue: marshalValue(validAci1)}},
-	},
-	// Username change
-	{
-		&account{ACI: validAci1, ACIIdentityKey: validAciIdentityKey1, UsernameHash: validUsernameHash1, Number: validPhoneNumber1},
-		&account{ACI: validAci1, ACIIdentityKey: validAciIdentityKey1, UsernameHash: validUsernameHash2, Number: validPhoneNumber1},
-		2,
-		[]expectedUpdateInputs{
-			{key: append([]byte{shared.UsernameHashPrefix}, validUsernameHash2...), value: marshalValue(validAci1), preUpdateValue: nil},
-			{key: append([]byte{shared.UsernameHashPrefix}, validUsernameHash1...), value: tombstoneBytes, preUpdateValue: marshalValue(validAci1)}},
-	},
-	// Phone number change
-	{
-		&account{ACI: validAci1, ACIIdentityKey: validAciIdentityKey1, UsernameHash: validUsernameHash1, Number: validPhoneNumber1},
-		&account{ACI: validAci1, ACIIdentityKey: validAciIdentityKey1, UsernameHash: validUsernameHash1, Number: validPhoneNumber2},
-		2,
-		[]expectedUpdateInputs{
-			{key: append([]byte{shared.NumberPrefix}, validPhoneNumber2...), value: marshalValue(validAci1), preUpdateValue: nil},
-			{key: append([]byte{shared.NumberPrefix}, validPhoneNumber1...), value: tombstoneBytes, preUpdateValue: marshalValue(validAci1)}},
+		},
 	},
 }
 
-func TestUpdateFromStream(t *testing.T) {
-	mockConfig, _ := config.Read(mockConfigFile)
-	mockTransparencyStore := db.NewMemoryTransparencyStore()
-	updateRequestChannel := make(chan updateRequest)
-	mockUpdateHandler := &KtUpdateHandler{
-		config: mockConfig.APIConfig,
-		tx:     mockTransparencyStore,
-		ch:     updateRequestChannel,
-	}
-	state := &shardState{}
-
-	for _, p := range testUpdateAccountPairs {
-		mockUpdater := new(mockLogUpdater)
-
-		accounts := &accountPair{Prev: p.prev, Next: p.next}
-		marshaledData, err := json.Marshal(accounts)
-		if err != nil {
-			t.Fatalf("Unexpected error marshaling acocunt pair")
-		}
-
-		for _, pair := range p.expectedUpdateInputs {
-			mockUpdater.On("update", mock.Anything, mock.Anything, pair.key, pair.value, mock.Anything, pair.preUpdateValue).Return(nil)
-		}
-
-		err = updateFromStream(context.Background(), marshaledData, state, mockUpdateHandler, mockUpdater)
-
-		assert.NoError(t, err)
-		mockUpdater.AssertNumberOfCalls(t, "update", p.expectedNumUpdates)
-		mockUpdater.AssertExpectations(t)
-	}
+func TestUpdateFromAciStream(t *testing.T) {
+	testStreamUpdate[aci](t, testUpdateAciPairs, updateFromAciStream)
 }
 
-func TestLockACI(t *testing.T) {
+func TestLockSearchKey(t *testing.T) {
 	const parallel = 5
 
 	state := &shardState{}
-	defer state.lockACI([]byte("other"))()
+	defer state.lockSearchKey([]byte("other"))()
 
 	counter := 0
 	output := make(chan int)
 	for range parallel {
 		go func() {
-			defer state.lockACI([]byte("label"))()
+			defer state.lockSearchKey([]byte("label"))()
 			output <- counter
 			time.Sleep(1 * time.Millisecond)
 			counter++
@@ -181,4 +128,177 @@ func TestLockACI(t *testing.T) {
 			t.Fatal("unexpected counter read")
 		}
 	}
+}
+
+type testCase[T SearchKey] struct {
+	pair                 *streamPair[T]
+	expectedNumUpdates   int
+	expectedUpdateInputs []expectedUpdateInputs
+}
+
+func testStreamUpdate[T SearchKey](t *testing.T,
+	pairs []testCase[T],
+	updaterFunc func(context.Context, []byte, *shardState, *KtUpdateHandler, Updater) error) {
+	mockConfig, _ := config.Read(mockConfigFile)
+	mockTransparencyStore := db.NewMemoryTransparencyStore()
+	updateRequestChannel := make(chan updateRequest)
+	mockUpdateHandler := &KtUpdateHandler{
+		config: mockConfig.APIConfig,
+		tx:     mockTransparencyStore,
+		ch:     updateRequestChannel,
+	}
+	state := &shardState{}
+
+	for _, p := range pairs {
+		mockUpdater := new(mockLogUpdater)
+
+		marshaledData, err := json.Marshal(p.pair)
+		if err != nil {
+			t.Fatalf("Unexpected error marshaling e164 streamPair")
+		}
+
+		for _, pair := range p.expectedUpdateInputs {
+			mockUpdater.On("update", mock.Anything, mock.Anything, pair.key, pair.value, mock.Anything, pair.preUpdateValue).Return(nil)
+		}
+
+		err = updaterFunc(context.Background(), marshaledData, state, mockUpdateHandler, mockUpdater)
+
+		assert.NoError(t, err)
+		mockUpdater.AssertNumberOfCalls(t, "update", p.expectedNumUpdates)
+		mockUpdater.AssertExpectations(t)
+	}
+}
+
+var testUpdateE164Pairs = []testCase[e164]{
+	// No change
+	{
+		&streamPair[e164]{
+			Prev: &e164{
+				Number: validPhoneNumber1,
+				ACI:    validAci1,
+			},
+			Next: &e164{
+				Number: validPhoneNumber1,
+				ACI:    validAci1,
+			},
+		},
+		0,
+		[]expectedUpdateInputs{},
+	},
+	// Add E164
+	{
+		&streamPair[e164]{
+			Prev: nil,
+			Next: &e164{
+				Number: validPhoneNumber1,
+				ACI:    validAci1,
+			},
+		},
+		1,
+		[]expectedUpdateInputs{
+			{key: append([]byte{shared.NumberPrefix}, []byte(validPhoneNumber1)...), value: marshalValue(validAci1), preUpdateValue: nil},
+		},
+	},
+	// Delete E164
+	{
+		&streamPair[e164]{
+			Prev: &e164{
+				Number: validPhoneNumber1,
+				ACI:    validAci1,
+			},
+			Next: nil,
+		},
+		1,
+		[]expectedUpdateInputs{
+			{key: append([]byte{shared.NumberPrefix}, []byte(validPhoneNumber1)...), value: tombstoneBytes, preUpdateValue: marshalValue(validAci1)},
+		},
+	},
+	// Update E164
+	{
+		&streamPair[e164]{
+			Prev: &e164{
+				Number: validPhoneNumber1,
+				ACI:    validAci1,
+			},
+			Next: &e164{
+				Number: validPhoneNumber1,
+				ACI:    validAci2,
+			},
+		},
+		1,
+		[]expectedUpdateInputs{
+			{key: append([]byte{shared.NumberPrefix}, []byte(validPhoneNumber1)...), value: marshalValue(validAci2), preUpdateValue: nil},
+		},
+	},
+}
+
+func TestUpdateFromE164Stream(t *testing.T) {
+	testStreamUpdate[e164](t, testUpdateE164Pairs, updateFromE164Stream)
+}
+
+var testUpdateUsernameHashPairs = []testCase[usernameHash]{
+	// No change
+	{
+		&streamPair[usernameHash]{
+			Prev: &usernameHash{
+				UsernameHash: validUsernameHash1,
+				ACI:          validAci1,
+			},
+			Next: &usernameHash{
+				UsernameHash: validUsernameHash1,
+				ACI:          validAci1,
+			},
+		},
+		0,
+		[]expectedUpdateInputs{},
+	},
+	// Add username hash
+	{
+		&streamPair[usernameHash]{
+			Prev: nil,
+			Next: &usernameHash{
+				UsernameHash: validUsernameHash1,
+				ACI:          validAci1,
+			},
+		},
+		1,
+		[]expectedUpdateInputs{
+			{key: append([]byte{shared.UsernameHashPrefix}, validUsernameHash1...), value: marshalValue(validAci1), preUpdateValue: nil},
+		},
+	},
+	// Delete username hash
+	{
+		&streamPair[usernameHash]{
+			Prev: &usernameHash{
+				UsernameHash: validUsernameHash1,
+				ACI:          validAci1,
+			},
+			Next: nil,
+		},
+		1,
+		[]expectedUpdateInputs{
+			{key: append([]byte{shared.UsernameHashPrefix}, validUsernameHash1...), value: tombstoneBytes, preUpdateValue: marshalValue(validAci1)},
+		},
+	},
+	// Update username hash
+	{
+		&streamPair[usernameHash]{
+			Prev: &usernameHash{
+				UsernameHash: validUsernameHash1,
+				ACI:          validAci1,
+			},
+			Next: &usernameHash{
+				UsernameHash: validUsernameHash1,
+				ACI:          validAci2,
+			},
+		},
+		1,
+		[]expectedUpdateInputs{
+			{key: append([]byte{shared.UsernameHashPrefix}, validUsernameHash1...), value: marshalValue(validAci2), preUpdateValue: nil},
+		},
+	},
+}
+
+func TestUpdateFromUsernameHashStream(t *testing.T) {
+	testStreamUpdate[usernameHash](t, testUpdateUsernameHashPairs, updateFromUsernameStream)
 }

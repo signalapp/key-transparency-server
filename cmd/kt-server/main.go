@@ -198,8 +198,18 @@ func main() {
 						util.Log().Fatalf("stream backfill failed: %v", err)
 					}
 				}
-				util.Log().Infof("Starting stream processing from Kinesis stream %q", config.StreamConfig.Name.String())
-				s.run(ctx, config.StreamConfig.Name.String(), streamStartTimestamp, updateHandler)
+
+				for streamName, updateFromStreamFunc := range map[string]updateFunc{
+					config.StreamConfig.AciStreamName.String():      updateFromAciStream,
+					config.StreamConfig.E164StreamName.String():     updateFromE164Stream,
+					config.StreamConfig.UsernameStreamName.String(): updateFromUsernameStream,
+				} {
+					util.Log().Infof("Starting stream processing from Kinesis stream: %s", streamName)
+					go func() {
+						s.run(ctx, streamName, streamStartTimestamp, updateHandler, updateFromStreamFunc)
+					}()
+				}
+
 			}()
 		}
 

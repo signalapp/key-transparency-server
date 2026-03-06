@@ -125,8 +125,11 @@ type FakeUpdates struct {
 }
 
 type StreamConfig struct {
-	Name envstr `yaml:"name"`
-	// If Name is provided but TableName is not, backfill will not be attempted.
+	AciStreamName      envstr `yaml:"aci-stream-name"`
+	E164StreamName     envstr `yaml:"e164-stream-name"`
+	UsernameStreamName envstr `yaml:"username-stream-name"`
+
+	// If TableName is not provided, backfill will not be attempted.
 	TableName envstr `yaml:"table"`
 }
 
@@ -260,8 +263,14 @@ func Read(filename string) (*Config, error) {
 	}
 
 	if parsed.StreamConfig != nil {
-		if parsed.StreamConfig.Name == "" {
-			return nil, fmt.Errorf("field not provided: stream.name")
+		if parsed.StreamConfig.AciStreamName == "" {
+			return nil, fmt.Errorf("field not provided: stream.aci-stream-name")
+		}
+		if parsed.StreamConfig.E164StreamName == "" {
+			return nil, fmt.Errorf("field not provided: stream.e164-stream-name")
+		}
+		if parsed.StreamConfig.UsernameStreamName == "" {
+			return nil, fmt.Errorf("field not provided: stream.username-stream-name")
 		}
 	}
 

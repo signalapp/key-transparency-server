@@ -216,7 +216,7 @@ func main() {
 						util.Log().Infof("%s stream start timestamp: %s", streamName, streamStartTimestamp.Format(time.RFC3339))
 					}
 					go func() {
-						s.run(ctx, streamName, streamStartTimestamp, updateHandler, updateFromStreamFunc)
+						s.run(ctx, streamName, streamStartTimestamp, updateHandler, updateFromStreamFunc, config.StreamConfig.CheckpointSize)
 					}()
 				}
 

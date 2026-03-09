@@ -165,7 +165,8 @@ type Streamer struct {
 }
 
 // run runs the streamer, blocking forever.
-func (s *Streamer) run(ctx context.Context, name string, startAtTimestamp *time.Time, updateHandler *KtUpdateHandler, updateFunc updateFunc) {
+func (s *Streamer) run(ctx context.Context, name string, startAtTimestamp *time.Time, updateHandler *KtUpdateHandler,
+	updateFunc updateFunc, checkpointSize uint) {
 	i := 0
 	for {
 		// Create a new context and shard map for each run.
@@ -229,7 +230,7 @@ func (s *Streamer) run(ctx context.Context, name string, startAtTimestamp *time.
 			}(runCtx, dup(r.Data), state)
 
 			// If only a few entries have been sequenced from this shard, move on.
-			if state.sinceLast < 100 {
+			if uint(state.sinceLast) < checkpointSize {
 				return consumer.ErrSkipCheckpoint
 			}
 			// If many entries have been sequenced, we need to checkpoint. First

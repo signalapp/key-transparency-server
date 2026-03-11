@@ -12,16 +12,16 @@ import javax.annotation.Nullable;
 import java.util.Map;
 
 /**
- * Filters DynamoDb record updates for the subset relevant to key transparency, outputting them to Kinesis
+ * Filters DynamoDb account updates for the subset relevant to key transparency, outputting them to Kinesis
  */
-public class FilterKTUpdatesHandler extends AbstractUpdatesHandler<Account> {
+public class FilterAciUpdatesHandler extends AbstractUpdatesHandler<Account> {
 
-  public FilterKTUpdatesHandler() {
+  public FilterAciUpdatesHandler() {
     super();
   }
 
   @VisibleForTesting
-  FilterKTUpdatesHandler(final KinesisClient kinesisClient, final String kinesisOutputStream) {
+  FilterAciUpdatesHandler(final KinesisClient kinesisClient, final String kinesisOutputStream) {
     super(kinesisClient, kinesisOutputStream);
   }
 

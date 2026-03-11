@@ -3,7 +3,7 @@
     {
       "awsRegion": "us-east-1",
       "eventID": "88888888-85b6-4a4b-a74e-bf4688888888",
-      "eventName": "MODIFY",
+      "eventName": "REMOVE",
       "userIdentity": null,
       "recordFormat": "application/json",
       "tableName": "Signal_Accounts_Staging",
@@ -23,17 +23,6 @@
           },
           "D": {
             "B": "eyJudW1iZXIiOiIrMTExMTExMTExIiwidXNlcm5hbWVIYXNoIjpudWxsLCJyZXNlcnZlZFVzZXJuYW1lSGFzaCI6bnVsbCwiZGV2aWNlcyI6W10sImlkZW50aXR5S2V5IjoiQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUEiLCJiYWRnZXMiOltdLCJyZWdpc3RyYXRpb25Mb2NrIjpudWxsLCJyZWdpc3RyYXRpb25Mb2NrU2FsdCI6bnVsbCwidmVyc2lvbiI6MTMsInBuaSI6ImNjY2NjY2NjLWNjY2MtY2NjYy1kZGRkLWRkZGRkZGRkZGRkZCIsInBuaUlkZW50aXR5S2V5IjoiQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkIiLCJjcHYiOiJhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhIiwidWFrIjoiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYj09IiwidXVhIjpmYWxzZSwiaW5DZHMiOnRydWV9Cg=="
-          }
-        },
-        "NewImage": {
-          "U": {
-            "B": "IiIiIiIiIiIiIiIiIiIiIg=="
-          },
-          "P": {
-            "S": "+999999999"
-          },
-          "D": {
-            "B": "eyJudW1iZXIiOiIrOTk5OTk5OTk5IiwidXNlcm5hbWVIYXNoIjpudWxsLCJyZXNlcnZlZFVzZXJuYW1lSGFzaCI6bnVsbCwiZGV2aWNlcyI6W10sImlkZW50aXR5S2V5IjoiQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUEiLCJiYWRnZXMiOltdLCJyZWdpc3RyYXRpb25Mb2NrIjpudWxsLCJyZWdpc3RyYXRpb25Mb2NrU2FsdCI6bnVsbCwidmVyc2lvbiI6MTMsInBuaSI6ImNjY2NjY2NjLWNjY2MtY2NjYy1kZGRkLWRkZGRkZGRkZGRkZCIsInBuaUlkZW50aXR5S2V5IjoiQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkIiLCJjcHYiOiJhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhIiwidWFrIjoiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYj09IiwidXVhIjpmYWxzZSwiaW5DZHMiOnRydWV9Cg=="
           }
         },
         "SizeBytes": 7001

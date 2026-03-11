@@ -21,17 +21,11 @@ import java.util.Map;
 import java.util.Objects;
 
 record Account(
-    String number,
     byte[] aci,
-    byte[] aciIdentityKey,
-    byte[] usernameHash) {
+    byte[] aciIdentityKey) {
 
   @VisibleForTesting
   static final String KEY_ACCOUNT_UUID = "U";
-  @VisibleForTesting
-  static final String ATTR_ACCOUNT_E164 = "P";
-  @VisibleForTesting
-  static final String ATTR_ACCOUNT_USERNAME_HASH = "N";
   @VisibleForTesting
   static final String ATTR_ACCOUNT_DATA = "D";
 
@@ -42,10 +36,8 @@ record Account(
     if (o == null || getClass() != o.getClass())
       return false;
     Account account = (Account) o;
-    return Objects.equals(number, account.number) &&
-        Arrays.equals(aci, account.aci) &&
-        Arrays.equals(aciIdentityKey, account.aciIdentityKey) &&
-        Arrays.equals(usernameHash, account.usernameHash);
+    return Arrays.equals(aci, account.aci) &&
+        Arrays.equals(aciIdentityKey, account.aciIdentityKey);
   }
 
   public record Pair(@Nullable Account prev, @Nullable Account next) implements KinesisRecord<Account> {
@@ -72,7 +64,6 @@ record Account(
 
   static Account fromItem(Map<String, AttributeValue> item) {
     Preconditions.checkNotNull(item.get(KEY_ACCOUNT_UUID));
-    Preconditions.checkNotNull(item.get(ATTR_ACCOUNT_E164));
     Preconditions.checkNotNull(item.get(ATTR_ACCOUNT_DATA));
     final byte[] uuid = new byte[16];
     item.get(KEY_ACCOUNT_UUID).getB().get(uuid);
@@ -84,19 +75,7 @@ record Account(
     } catch (IOException e) {
       throw new UncheckedIOException("IOException from reading bytes array", e);
     }
-    final String number = item.get(ATTR_ACCOUNT_E164).getS();
-    final byte[] usernameHash;
-    final AttributeValue usernameHashAv = item.get(ATTR_ACCOUNT_USERNAME_HASH);
-    if (usernameHashAv != null) {
-      usernameHash = new byte[32];
-      usernameHashAv.getB().asReadOnlyBuffer().get(usernameHash);
-    } else {
-      usernameHash = null;
-    }
-    return new Account(
-        number,
-        uuid,
-        identityKey,
-        usernameHash);
+
+    return new Account(uuid, identityKey);
   }
 }

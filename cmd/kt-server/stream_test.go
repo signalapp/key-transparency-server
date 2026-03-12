@@ -9,7 +9,6 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -106,30 +105,6 @@ func TestUpdateFromAciStream(t *testing.T) {
 	testStreamUpdate[aci](t, testUpdateAciPairs, updateFromAciStream)
 }
 
-func TestLockSearchKey(t *testing.T) {
-	const parallel = 5
-
-	state := &shardState{}
-	defer state.lockSearchKey([]byte("other"))()
-
-	counter := 0
-	output := make(chan int)
-	for range parallel {
-		go func() {
-			defer state.lockSearchKey([]byte("label"))()
-			output <- counter
-			time.Sleep(1 * time.Millisecond)
-			counter++
-		}()
-	}
-
-	for i := range parallel {
-		if res := <-output; res != i {
-			t.Fatal("unexpected counter read")
-		}
-	}
-}
-
 type testCase[T SearchKey] struct {
 	pair                 *streamPair[T]
 	expectedNumUpdates   int
@@ -138,7 +113,7 @@ type testCase[T SearchKey] struct {
 
 func testStreamUpdate[T SearchKey](t *testing.T,
 	pairs []testCase[T],
-	updaterFunc func(context.Context, []byte, *shardState, *KtUpdateHandler, Updater) error) {
+	updaterFunc func(context.Context, []byte, *KtUpdateHandler, Updater) error) {
 	mockConfig, _ := config.Read(mockConfigFile)
 	mockTransparencyStore := db.NewMemoryTransparencyStore()
 	updateRequestChannel := make(chan updateRequest)
@@ -147,7 +122,6 @@ func testStreamUpdate[T SearchKey](t *testing.T,
 		tx:     mockTransparencyStore,
 		ch:     updateRequestChannel,
 	}
-	state := &shardState{}
 
 	for _, p := range pairs {
 		mockUpdater := new(mockLogUpdater)
@@ -161,7 +135,7 @@ func testStreamUpdate[T SearchKey](t *testing.T,
 			mockUpdater.On("update", mock.Anything, mock.Anything, pair.key, pair.value, mock.Anything, pair.preUpdateValue).Return(nil)
 		}
 
-		err = updaterFunc(context.Background(), marshaledData, state, mockUpdateHandler, mockUpdater)
+		err = updaterFunc(context.Background(), marshaledData, mockUpdateHandler, mockUpdater)
 
 		assert.NoError(t, err)
 		mockUpdater.AssertNumberOfCalls(t, "update", p.expectedNumUpdates)

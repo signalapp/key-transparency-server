@@ -128,7 +128,6 @@ type StreamConfig struct {
 	AciStreamName      envstr `yaml:"aci-stream-name"`
 	E164StreamName     envstr `yaml:"e164-stream-name"`
 	UsernameStreamName envstr `yaml:"username-stream-name"`
-	CheckpointSize     uint   `yaml:"checkpoint-size"`
 
 	NewStreams []string `yaml:"new-streams"`
 
@@ -274,9 +273,6 @@ func Read(filename string) (*Config, error) {
 		}
 		if parsed.StreamConfig.UsernameStreamName == "" {
 			return nil, fmt.Errorf("field not provided: stream.username-stream-name")
-		}
-		if parsed.StreamConfig.CheckpointSize == 0 {
-			return nil, fmt.Errorf("stream.checkpoint-size cannot be 0")
 		}
 	}
 

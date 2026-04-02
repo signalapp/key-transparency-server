@@ -17,7 +17,6 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
-	"slices"
 	"syscall"
 	"time"
 
@@ -208,11 +207,6 @@ func main() {
 					var streamStartTimestamp *time.Time
 					if backfillStreamStartTimestamp != nil {
 						streamStartTimestamp = backfillStreamStartTimestamp
-					} else {
-						if slices.Contains(config.StreamConfig.NewStreams, streamName) {
-							start := time.Now().Add(-time.Minute * 15)
-							streamStartTimestamp = &start
-						}
 					}
 
 					util.Log().Infof("Starting stream processing from Kinesis stream: %s", streamName)

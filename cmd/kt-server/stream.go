@@ -164,8 +164,14 @@ func backfill(ctx context.Context, table string, updateHandler *KtUpdateHandler)
 		eg.Go(func() (returnedErr error) {
 			util.Log().Infof("Starting processing of backfill shard %d", shard)
 			defer func() {
-				metrics.IncrCounter([]string{withinBackfill, "shards_processed"}, 1)
-				util.Log().Infof("Finished processing of backfill shard %d: err=%v", shard, returnedErr)
+				success := returnedErr == nil
+				metrics.IncrCounterWithLabels([]string{withinBackfill, "shards_processed"}, 1,
+					[]metrics.Label{{Name: "success", Value: strconv.FormatBool(success)}})
+				if success {
+					util.Log().Infof("Successfully finished processing backfill shard=%d", shard)
+				} else {
+					util.Log().Errorf("Failed to finish processing backfill shard=%d, err=%v ", shard, err)
+				}
 			}()
 			var exclusiveStartKey map[string]types.AttributeValue
 			for i := 0; ; i++ {
@@ -194,8 +200,10 @@ func backfill(ctx context.Context, table string, updateHandler *KtUpdateHandler)
 func backfillScanOutput(ctx context.Context, scan *dynamodb.ScanOutput, updateHandler *KtUpdateHandler, updater Updater) error {
 	for i, item := range scan.Items {
 		if err := updateFromBackfill(ctx, item, updateHandler, updater); err != nil {
+			metrics.IncrCounter([]string{withinBackfill, "accounts_processed", "error"}, 1)
 			return fmt.Errorf("processing item %d: %w", i, err)
 		}
+		metrics.IncrCounter([]string{withinBackfill, "accounts_processed", "success"}, 1)
 	}
 	return nil
 }
@@ -212,29 +220,42 @@ func updateFromBackfill(ctx context.Context, item map[string]types.AttributeValu
 	}
 	ub, ok := u.(*types.AttributeValueMemberB)
 	if !ok {
+		util.Log().Errorf("account ID not bytes. %T %v", u, u)
 		return fmt.Errorf("account ID not bytes")
 	} else if len(ub.Value) != 16 {
+		util.Log().Errorf("invalid account ID. account ID: %s",
+			base64.StdEncoding.EncodeToString(ub.Value))
 		return fmt.Errorf("account ID not valid")
 	}
 	accountID := ub.Value
 	d := item["D"]
 	if d == nil {
+		util.Log().Errorf("account has no data. ACI: %s",
+			base64.StdEncoding.EncodeToString(accountID))
 		return fmt.Errorf("account %x no data", accountID)
 	}
 	db, ok := d.(*types.AttributeValueMemberB)
 	if !ok {
+		util.Log().Errorf("account data not bytes. ACI: %s",
+			base64.StdEncoding.EncodeToString(accountID))
 		return fmt.Errorf("account %x data not bytes", accountID)
 	}
 	var account backfillAccount
 	if err := json.Unmarshal(db.Value, &account); err != nil {
+		util.Log().Errorf("error parsing account data. ACI: %s, err: %v",
+			base64.StdEncoding.EncodeToString(accountID), err)
 		return fmt.Errorf("parsing account %x data: %w", accountID, err)
 	} else if len(account.Number) == 0 {
+		util.Log().Errorf("account has empty number. ACI: %s",
+			base64.StdEncoding.EncodeToString(accountID))
 		return fmt.Errorf("account %x data has empty number", accountID)
 	}
 	if len(account.ACIIdentityKey) > 0 {
 		if err := updater.update(ctx, withinBackfill,
 			append([]byte{shared.AciPrefix}, accountID...),
 			marshalValue(account.ACIIdentityKey), updateHandler, nil); err != nil {
+			util.Log().Errorf("error updating ACI. ACI: %s, ACI identity key: %s, err: %v",
+				base64.StdEncoding.EncodeToString(accountID), base64.StdEncoding.EncodeToString(account.ACIIdentityKey), err)
 			return fmt.Errorf("updating %x ACI: %w", accountID, err)
 		}
 	}
@@ -242,17 +263,23 @@ func updateFromBackfill(ctx context.Context, item map[string]types.AttributeValu
 		if err := updater.update(ctx, withinBackfill,
 			append([]byte{shared.NumberPrefix}, []byte(account.Number)...),
 			marshalValue(accountID), updateHandler, nil); err != nil {
+			util.Log().Errorf("error updating number. ACI: %s, number: %s, err: %v",
+				base64.StdEncoding.EncodeToString(accountID), account.Number, err)
 			return fmt.Errorf("updating %x Number: %w", accountID, err)
 		}
 	}
 	if len(account.UsernameHash) > 0 {
 		usernameHash, err := base64.RawURLEncoding.DecodeString(account.UsernameHash)
 		if err != nil {
+			util.Log().Errorf("error decoding username hash. ACI: %s, username hash: %s, err: %v",
+				base64.StdEncoding.EncodeToString(accountID), account.UsernameHash, err)
 			return fmt.Errorf("updating %x username hash: failed to base64 decode hash: %w", accountID, err)
 		}
 		if err := updater.update(ctx, withinBackfill,
 			append([]byte{shared.UsernameHashPrefix}, usernameHash...),
 			marshalValue(accountID), updateHandler, nil); err != nil {
+			util.Log().Errorf("error updating username hash. ACI: %s, username hash: %s, err: %v",
+				base64.StdEncoding.EncodeToString(accountID), account.UsernameHash, err)
 			return fmt.Errorf("updating %x username hash: %w", accountID, err)
 		}
 	}

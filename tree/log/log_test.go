@@ -173,6 +173,30 @@ func TestConsistencyProof(t *testing.T) {
 	}
 }
 
+func TestConsistencyProof_EmptyOrSameSizeTrees(t *testing.T) {
+	tree := NewTree(db.NewMemoryTransparencyStore().LogStore())
+
+	_, err := tree.GetConsistencyProof(0, 0)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+
+	_, err = tree.GetConsistencyProof(0, 1)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+
+	_, err = tree.GetConsistencyProof(1, 0)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+
+	_, err = tree.GetConsistencyProof(1, 1)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
 func TestBatchAppend(t *testing.T) {
 	leaves := make([][]byte, 100)
 	for i := range leaves {

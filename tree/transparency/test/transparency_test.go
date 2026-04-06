@@ -171,6 +171,37 @@ func TestTree(t *testing.T) {
 	}
 }
 
+func TestSearch_EmptyTree_ProofGeneration(t *testing.T) {
+	tree, store, _, _ := NewTree(t, transparency.ContactMonitoring)
+
+	// Populate tree with some random data.
+	temp, err := RandomTree(tree, store, 100, []int{10, 50, 75}, []int{})
+
+	emptyTreeSize := uint64(0)
+	req := &pb.TreeSearchRequest{
+		SearchKey:   temp[0],
+		Consistency: &pb.Consistency{Last: &emptyTreeSize},
+	}
+
+	_, err = tree.Search(req)
+
+	if gprcError, ok := status.FromError(err); !ok || gprcError.Code() != codes.InvalidArgument {
+		t.Fatal("Expected `invalid argument` error, got ", err)
+	}
+
+	req.Consistency = &pb.Consistency{Distinguished: &emptyTreeSize}
+	_, err = tree.Search(req)
+	if gprcError, ok := status.FromError(err); !ok || gprcError.Code() != codes.InvalidArgument {
+		t.Fatal("Expected `invalid argument` error, got ", err)
+	}
+
+	req.Consistency = &pb.Consistency{Last: &emptyTreeSize, Distinguished: &emptyTreeSize}
+	_, err = tree.Search(req)
+	if gprcError, ok := status.FromError(err); !ok || gprcError.Code() != codes.InvalidArgument {
+		t.Fatal("Expected `invalid argument` error, got ", err)
+	}
+}
+
 func TestMonitor(t *testing.T) {
 	tree, store, _, _ := NewTree(t, transparency.ContactMonitoring)
 
@@ -235,6 +266,26 @@ func TestMonitor(t *testing.T) {
 		t.Fatal(err)
 	} else if v, ok := data3.Ptrs[95]; len(data3.Ptrs) != 1 || !ok || v != 0 {
 		t.Fatal("monitoring data not as expected")
+	}
+
+	// Check that a 0 value for last or distinguished tree size returns an error
+	emptyTreeSize := uint64(0)
+	req.Consistency = &pb.Consistency{Last: &emptyTreeSize}
+	_, err = tree.Monitor(req)
+	if gprcError, ok := status.FromError(err); !ok || gprcError.Code() != codes.InvalidArgument {
+		t.Fatal("Expected `invalid argument` error, got ", err)
+	}
+
+	req.Consistency = &pb.Consistency{Distinguished: &emptyTreeSize}
+	_, err = tree.Monitor(req)
+	if gprcError, ok := status.FromError(err); !ok || gprcError.Code() != codes.InvalidArgument {
+		t.Fatal("Expected `invalid argument` error, got ", err)
+	}
+
+	req.Consistency = &pb.Consistency{Last: &emptyTreeSize, Distinguished: &emptyTreeSize}
+	_, err = tree.Monitor(req)
+	if gprcError, ok := status.FromError(err); !ok || gprcError.Code() != codes.InvalidArgument {
+		t.Fatal("Expected `invalid argument` error, got ", err)
 	}
 }
 

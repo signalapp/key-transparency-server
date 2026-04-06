@@ -141,7 +141,9 @@ func (t *Tree) GetBatchProof(entries []uint64, treeSize uint64) ([][]byte, error
 // GetConsistencyProof returns a proof that the current log with n elements is
 // an extension of a previous log root with m elements, 0 < m < n.
 func (t *Tree) GetConsistencyProof(m, n uint64) ([][]byte, error) {
-	if m >= n {
+	if m == 0 {
+		return nil, fmt.Errorf("sub-tree for consistency proof must not be empty")
+	} else if m >= n {
 		return nil, fmt.Errorf("second parameter must be greater than first")
 	}
 	return t.fetchSpecific(n, math.ConsistencyProof(m, n))

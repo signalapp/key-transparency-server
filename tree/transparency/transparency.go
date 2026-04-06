@@ -151,6 +151,9 @@ func (t *Tree) fullTreeHead(req *pb.Consistency) (*pb.FullTreeHead, error) {
 		if *req.Last > t.latest.TreeSize {
 			return nil, status.Error(codes.InvalidArgument, "last observed non-distinguished tree size is greater than current tree size")
 		}
+		if *req.Last == 0 {
+			return nil, status.Error(codes.InvalidArgument, "last observed non-distinguished tree size must be greater than zero")
+		}
 		temp, err := t.logTree.GetConsistencyProof(*req.Last, t.latest.TreeSize)
 		if err != nil {
 			return nil, err
@@ -160,6 +163,9 @@ func (t *Tree) fullTreeHead(req *pb.Consistency) (*pb.FullTreeHead, error) {
 	if req.Distinguished != nil && *req.Distinguished != t.latest.TreeSize {
 		if *req.Distinguished > t.latest.TreeSize {
 			return nil, status.Error(codes.InvalidArgument, "last observed distinguished tree size is greater than current tree size")
+		}
+		if *req.Distinguished == 0 {
+			return nil, status.Error(codes.InvalidArgument, "last observed distinguished tree size must be greater than zero")
 		}
 		temp, err := t.logTree.GetConsistencyProof(*req.Distinguished, t.latest.TreeSize)
 		if err != nil {

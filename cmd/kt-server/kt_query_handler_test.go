@@ -76,6 +76,9 @@ var testInvalidSearchRequestParameters = []struct {
 		UsernameHash: invalidUsernameHash, Consistency: &tpb.Consistency{}}},
 	// Consistency cannot be nil
 	{&pb.SearchRequest{Aci: validAci1, AciIdentityKey: validAciIdentityKey1}},
+	// Consistency cannot be nil
+	{&pb.SearchRequest{Aci: validAci1, AciIdentityKey: validAciIdentityKey1,
+		E164SearchRequest: &pb.E164SearchRequest{E164: &validPhoneNumber1, UnidentifiedAccessKey: unidentifiedAccessKey}}},
 }
 
 func TestSearch_InvalidArgument(t *testing.T) {

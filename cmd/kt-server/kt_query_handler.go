@@ -127,19 +127,26 @@ func (h *KtQueryHandler) search(req *pb.SearchRequest, tree *transparency.Tree) 
 func validateRequestParameters(req *pb.SearchRequest) error {
 	if req == nil {
 		return status.Error(codes.InvalidArgument, "invalid request")
-	} else if len(req.Aci) != 16 {
+	}
+	if len(req.Aci) != 16 {
 		return status.Error(codes.InvalidArgument, "invalid ACI")
-	} else if len(req.AciIdentityKey) == 0 {
+	}
+	if len(req.AciIdentityKey) == 0 {
 		return status.Error(codes.InvalidArgument, "must provide ACI identity key")
-	} else if req.E164SearchRequest != nil {
+	}
+	if req.E164SearchRequest != nil {
 		if len(req.E164SearchRequest.UnidentifiedAccessKey) == 0 {
 			return status.Error(codes.InvalidArgument, "must provide unidentified access key for a phone number search")
-		} else if !isPossiblePhoneNumber(req.E164SearchRequest.GetE164()) {
+		}
+
+		if !isPossiblePhoneNumber(req.E164SearchRequest.GetE164()) {
 			return status.Error(codes.InvalidArgument, "invalid phone number")
 		}
-	} else if len(req.UsernameHash) != 0 && len(req.UsernameHash) != 32 {
+	}
+	if len(req.UsernameHash) != 0 && len(req.UsernameHash) != 32 {
 		return status.Error(codes.InvalidArgument, "invalid username hash")
-	} else if req.Consistency == nil {
+	}
+	if req.Consistency == nil {
 		return status.Error(codes.InvalidArgument, "consistency cannot be nil")
 	}
 	return nil

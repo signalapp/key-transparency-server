@@ -17,14 +17,18 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"runtime/debug"
 	"syscall"
 	"time"
 
+	"github.com/grpc-ecosystem/go-grpc-middleware/recovery"
 	"github.com/rs/zerolog"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health"
 	healthgrpc "google.golang.org/grpc/health/grpc_health_v1"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/status"
 	"gopkg.in/natefinch/lumberjack.v2"
 
 	"github.com/signalapp/keytransparency/cmd/internal/config"
@@ -136,8 +140,15 @@ func main() {
 			util.Log().Fatalf("Failed to create listener for kt query server: %v", err)
 		}
 
+		logPanicOpt := grpc_recovery.WithRecoveryHandler(func(p interface{}) error {
+			util.Log().Errorf("panic triggered: %v\n %s", p, debug.Stack())
+			return status.Error(codes.Internal, "internal server error")
+		})
+
 		// Register kt query server
-		ktQueryServer := grpc.NewServer(getServerOptions(config.KtQueryServiceConfig, nil)...)
+		ktQueryServer := grpc.NewServer(getServerOptions(config.KtQueryServiceConfig, []grpc.UnaryServerInterceptor{
+			grpc_recovery.UnaryServerInterceptor(logPanicOpt),
+		})...)
 		pb.RegisterKeyTransparencyQueryServiceServer(ktQueryServer, ktQueryHandler)
 
 		util.Log().Infof("Starting kt-query server at: %v", config.KtQueryServiceConfig.ServerAddr)

@@ -10,13 +10,14 @@ import (
 	"crypto/rand"
 	"testing"
 
-	"github.com/signalapp/keytransparency/cmd/internal/config"
-	"github.com/signalapp/keytransparency/cmd/shared"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+
+	"github.com/signalapp/keytransparency/cmd/internal/config"
+	"github.com/signalapp/keytransparency/cmd/shared"
 )
 
 var (
@@ -71,12 +72,12 @@ var testValidateAuthorizedHeadersParameters = []struct {
 	// extra headers ok
 	{nil, map[string]string{"H": "V"}, codes.OK, ""},
 	// missing header is not ok
-	{map[string][]string{"H": {"V"}}, nil, codes.PermissionDenied, ""},
-	{map[string][]string{"H": {"V"}}, map[string]string{}, codes.PermissionDenied, ""},
+	{map[string][]string{"H": {"V"}}, nil, codes.Unauthenticated, ""},
+	{map[string][]string{"H": {"V"}}, map[string]string{}, codes.Unauthenticated, ""},
 	// authorized value with incorrect header is not ok
-	{map[string][]string{"H": {"V"}}, map[string]string{"H1": "V"}, codes.PermissionDenied, ""},
+	{map[string][]string{"H": {"V"}}, map[string]string{"H1": "V"}, codes.Unauthenticated, ""},
 	// correct header, incorrect value is not ok
-	{map[string][]string{"H": {"V"}}, map[string]string{"H": "V1"}, codes.PermissionDenied, ""},
+	{map[string][]string{"H": {"V"}}, map[string]string{"H": "V1"}, codes.Unauthenticated, ""},
 	// single header matches
 	{map[string][]string{"H": {"V"}}, map[string]string{"H": "V"}, codes.OK, "V"},
 	// one match, one missing is ok

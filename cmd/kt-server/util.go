@@ -13,13 +13,13 @@ import (
 	"strings"
 
 	"github.com/hashicorp/go-metrics"
-	"github.com/signalapp/keytransparency/cmd/shared"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
 	"github.com/signalapp/keytransparency/cmd/internal/config"
+	"github.com/signalapp/keytransparency/cmd/shared"
 	"github.com/signalapp/keytransparency/tree/transparency/pb"
 )
 
@@ -159,7 +159,7 @@ func validateAuthorizedHeaders(authorizedHeaders map[string][]string, md metadat
 	}
 
 	if !passedValidation {
-		return "", status.Error(codes.PermissionDenied, fmt.Sprintf("invalid header values"))
+		return "", status.Error(codes.Unauthenticated, fmt.Sprintf("invalid header values"))
 	}
 
 	return matchedValue, nil

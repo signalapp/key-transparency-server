@@ -18,7 +18,8 @@ import java.util.Arrays;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.Map;
-import java.util.Objects;
+
+import static org.signal.lambda.Util.checkLengthAndExtractBytes;
 
 record Account(
     byte[] aci,
@@ -65,8 +66,8 @@ record Account(
   static Account fromItem(Map<String, AttributeValue> item) {
     Preconditions.checkNotNull(item.get(KEY_ACCOUNT_UUID));
     Preconditions.checkNotNull(item.get(ATTR_ACCOUNT_DATA));
-    final byte[] uuid = new byte[16];
-    item.get(KEY_ACCOUNT_UUID).getB().get(uuid);
+    final byte[] uuid = checkLengthAndExtractBytes(item.get(KEY_ACCOUNT_UUID), "UUID", 16);
+
     final ByteBuffer data = item.get(ATTR_ACCOUNT_DATA).getB().asReadOnlyBuffer();
     final byte[] identityKey;
     try {

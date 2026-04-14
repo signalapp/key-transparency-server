@@ -10,8 +10,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import com.amazonaws.services.lambda.runtime.Context;
+import com.amazonaws.services.lambda.runtime.LambdaLogger;
 import com.amazonaws.services.lambda.runtime.events.DynamodbEvent;
 import com.amazonaws.services.lambda.runtime.events.StreamsEventResponse;
 import com.amazonaws.services.lambda.runtime.tests.EventLoader;
@@ -19,6 +21,7 @@ import java.io.IOException;
 import java.util.Base64;
 import java.util.List;
 import java.util.stream.Stream;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -103,5 +106,21 @@ class FilterUsernameUpdatesHandlerTest {
     } catch (IOException e) {
       throw new RuntimeException("mapping", e);
     }
+  }
+
+  @Test
+  void invalidUsernameHashLength() {
+    final String fileName = "username/testevent_invalid_username_hash_length.json";
+    final DynamodbEvent event = EventLoader.loadDynamoDbEvent(fileName);
+
+    KinesisClient mockClient = mock(KinesisClient.class);
+    FilterUsernameUpdatesHandler handler = new FilterUsernameUpdatesHandler(mockClient, "mystream");
+
+    Context contextMock = mock(Context.class);
+    when(contextMock.getLogger()).thenReturn(mock(LambdaLogger.class));
+    final StreamsEventResponse streamsEventResponse = handler.handleRequest(event, contextMock);
+    assertEquals(1, streamsEventResponse.getBatchItemFailures().size());
+    ArgumentCaptor<PutRecordRequest> captor = ArgumentCaptor.forClass(PutRecordRequest.class);
+    verify(mockClient, times(0)).putRecord(captor.capture());
   }
 }

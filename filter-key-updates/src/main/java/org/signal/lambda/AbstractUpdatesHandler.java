@@ -6,12 +6,14 @@
 package org.signal.lambda;
 
 import com.amazonaws.services.lambda.runtime.Context;
+import com.amazonaws.services.lambda.runtime.LambdaLogger;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.amazonaws.services.lambda.runtime.events.DynamodbEvent;
 import com.amazonaws.services.lambda.runtime.events.StreamsEventResponse;
 import com.amazonaws.services.lambda.runtime.events.StreamsEventResponse.BatchItemFailure;
 import com.amazonaws.services.lambda.runtime.events.models.dynamodb.AttributeValue;
 import com.amazonaws.services.lambda.runtime.events.models.dynamodb.StreamRecord;
+import com.amazonaws.services.lambda.runtime.logging.LogLevel;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.annotations.VisibleForTesting;
@@ -54,6 +56,7 @@ public abstract class AbstractUpdatesHandler<T> implements
   // https://docs.aws.amazon.com/lambda/latest/dg/with-ddb-create-package.html
   @Override
   public StreamsEventResponse handleRequest(final DynamodbEvent dbUpdate, final Context context) {
+    LambdaLogger logger = context.getLogger();
     List<BatchItemFailure> batchItemFailures = new ArrayList<>();
     String curRecordSequenceNumber = "";
 
@@ -64,7 +67,7 @@ public abstract class AbstractUpdatesHandler<T> implements
         processRecord(dbRecord);
       } catch (Exception e) {
         batchItemFailures.add(new StreamsEventResponse.BatchItemFailure(curRecordSequenceNumber));
-        e.printStackTrace();
+        logger.log(e.getMessage(), LogLevel.ERROR);
       }
     }
 

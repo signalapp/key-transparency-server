@@ -13,6 +13,8 @@ import javax.annotation.Nullable;
 import java.util.Arrays;
 import java.util.Map;
 
+import static org.signal.lambda.Util.checkLengthAndExtractBytes;
+
 record E164Constraint(
     String e164,
     byte[] aci) {
@@ -52,8 +54,7 @@ record E164Constraint(
 
     final String number = item.get(KEY_ACCOUNT_E164).getS();
 
-    final byte[] uuid = new byte[16];
-    item.get(ATTR_ACCOUNT_UUID).getB().get(uuid);
+    final byte[] uuid = checkLengthAndExtractBytes(item.get(ATTR_ACCOUNT_UUID), "UUID", 16);
 
     return new E164Constraint(number, uuid);
   }

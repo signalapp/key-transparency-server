@@ -14,6 +14,8 @@ import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.Map;
 
+import static org.signal.lambda.Util.checkLengthAndExtractBytes;
+
 record UsernameConstraint(
     byte[] usernameHash,
     byte[] aci,
@@ -57,13 +59,8 @@ record UsernameConstraint(
     Preconditions.checkNotNull(item.get(ATTR_ACCOUNT_UUID));
     Preconditions.checkNotNull(item.get(ATTR_CONFIRMED));
 
-    final byte[] usernameHash = new byte[32];
-
-    final AttributeValue usernameHashAv = item.get(KEY_USERNAME_HASH);
-    usernameHashAv.getB().get(usernameHash);
-
-    final byte[] uuid = new byte[16];
-    item.get(ATTR_ACCOUNT_UUID).getB().get(uuid);
+    final byte[] usernameHash = checkLengthAndExtractBytes(item.get(KEY_USERNAME_HASH), "usernameHash", 32);
+    final byte[] uuid = checkLengthAndExtractBytes(item.get(ATTR_ACCOUNT_UUID), "UUID", 16);
 
     final boolean confirmed = item.get(ATTR_CONFIRMED).getBOOL();
 

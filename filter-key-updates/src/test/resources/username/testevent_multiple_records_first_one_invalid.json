@@ -1,0 +1,60 @@
+{
+  "Records": [
+    {
+      "eventID": "88888888-85b6-4a4b-a74e-bf4688888888",
+      "eventName": "REMOVE",
+      "eventVersion": "1.1",
+      "eventSource": "aws:dynamodb",
+      "awsRegion": "us-east-1",
+      "dynamodb": {
+        "ApproximateCreationDateTime": "2026-02-17T12:55:15-05:00",
+        "Keys": {
+          "N": {
+            "B": "hhokzL+ZLFO9Y4ebDsjuctum/mqjQd0UDxkMe8Ps/Q=="
+          }
+        },
+        "OldImage": {
+          "F": {
+            "BOOL": true
+          },
+          "N": {
+            "B": "hhokzL+ZLFO9Y4ebDsjuctum/mqjQd0UDxkMe8Ps/Q=="
+          },
+          "U": {
+            "B": "IiIiIiIiIiIiIiIiIiIiIg=="
+          }
+        },
+        "SizeBytes": 96,
+        "StreamViewType": "NEW_AND_OLD_IMAGES"
+      }
+    },
+    {
+      "eventID": "88888888-85b6-4a4b-a74e-bf4688888888",
+      "eventName": "MODIFY",
+      "eventVersion": "1.1",
+      "eventSource": "aws:dynamodb",
+      "awsRegion": "us-east-1",
+      "dynamodb": {
+        "ApproximateCreationDateTime": "2026-02-17T12:55:17-05:00",
+        "Keys": {
+          "N": {
+            "B": "EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE="
+          }
+        },
+        "NewImage": {
+          "F": {
+            "BOOL": true
+          },
+          "N": {
+            "B": "EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE="
+          },
+          "U": {
+            "B": "BbBbBbBbBbBbBbBbBbBbBg=="
+          }
+        },
+        "SizeBytes": 148,
+        "StreamViewType": "NEW_AND_OLD_IMAGES"
+      }
+    }
+  ]
+}

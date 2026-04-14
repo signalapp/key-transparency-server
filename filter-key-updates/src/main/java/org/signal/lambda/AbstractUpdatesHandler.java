@@ -57,7 +57,6 @@ public abstract class AbstractUpdatesHandler<T> implements
   @Override
   public StreamsEventResponse handleRequest(final DynamodbEvent dbUpdate, final Context context) {
     LambdaLogger logger = context.getLogger();
-    List<BatchItemFailure> batchItemFailures = new ArrayList<>();
     String curRecordSequenceNumber = "";
 
     for (DynamodbEvent.DynamodbStreamRecord record : dbUpdate.getRecords()) {
@@ -66,12 +65,16 @@ public abstract class AbstractUpdatesHandler<T> implements
       try {
         processRecord(dbRecord);
       } catch (Exception e) {
-        batchItemFailures.add(new StreamsEventResponse.BatchItemFailure(curRecordSequenceNumber));
-        logger.log(e.getMessage(), LogLevel.ERROR);
+        logger.log(
+            "Failed to process record: %s. sequenceNumber=%s, record=%s.".formatted(
+                e.getMessage(), curRecordSequenceNumber, dbRecord),
+            LogLevel.ERROR
+        );
+        return new StreamsEventResponse(List.of(new BatchItemFailure(curRecordSequenceNumber)));
       }
     }
 
-    return new StreamsEventResponse(batchItemFailures);
+    return new StreamsEventResponse();
   }
 
   // Modeled after https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/kds_gettingstarted.html

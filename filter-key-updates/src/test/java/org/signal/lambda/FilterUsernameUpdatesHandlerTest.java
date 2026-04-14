@@ -6,7 +6,7 @@
 package org.signal.lambda;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -48,7 +48,7 @@ class FilterUsernameUpdatesHandlerTest {
     FilterUsernameUpdatesHandler handler = new FilterUsernameUpdatesHandler(mockClient, "mystream");
     Context contextMock = mock(Context.class);
     final StreamsEventResponse streamsEventResponse = handler.handleRequest(event, contextMock);
-    assertTrue(streamsEventResponse.getBatchItemFailures().isEmpty());
+    assertNull(streamsEventResponse.getBatchItemFailures());
     ArgumentCaptor<PutRecordRequest> captor = ArgumentCaptor.forClass(PutRecordRequest.class);
     verify(mockClient, times(expected == null ? 0 : 1)).putRecord(captor.capture());
     if (expected != null) {
@@ -110,7 +110,7 @@ class FilterUsernameUpdatesHandlerTest {
 
   @Test
   void invalidUsernameHashLength() {
-    final String fileName = "username/testevent_invalid_username_hash_length.json";
+    final String fileName = "username/testevent_multiple_records_first_one_invalid.json";
     final DynamodbEvent event = EventLoader.loadDynamoDbEvent(fileName);
 
     KinesisClient mockClient = mock(KinesisClient.class);

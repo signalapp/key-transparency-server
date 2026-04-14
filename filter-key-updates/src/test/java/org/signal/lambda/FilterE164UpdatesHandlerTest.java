@@ -6,7 +6,7 @@
 package org.signal.lambda;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -45,7 +45,7 @@ class FilterE164UpdatesHandlerTest {
     FilterE164UpdatesHandler handler = new FilterE164UpdatesHandler(mockClient, "mystream");
     Context contextMock = mock(Context.class);
     final StreamsEventResponse streamsEventResponse = handler.handleRequest(event, contextMock);
-    assertTrue(streamsEventResponse.getBatchItemFailures().isEmpty());
+    assertNull(streamsEventResponse.getBatchItemFailures());
     ArgumentCaptor<PutRecordRequest> captor = ArgumentCaptor.forClass(PutRecordRequest.class);
     verify(mockClient, times(expected == null ? 0 : 1)).putRecord(captor.capture());
     if (expected != null) {

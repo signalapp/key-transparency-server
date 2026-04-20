@@ -50,12 +50,11 @@ func createDistinctValue(value []byte) []byte {
 	return distinctValue
 }
 
-func getServerOptions(config *config.ServiceConfig, additionalInterceptors []grpc.UnaryServerInterceptor) []grpc.ServerOption {
-	if config.AuthorizedHeaders == nil || len(config.AuthorizedHeaders) == 0 {
-		return nil
-	}
-
-	interceptors := []grpc.UnaryServerInterceptor{func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp any, err error) {
+func validateAuthorizedHeadersInterceptor(config *config.ServiceConfig) func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp any, err error) {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp any, err error) {
+		if config.AuthorizedHeaders == nil || len(config.AuthorizedHeaders) == 0 {
+			return handler(ctx, req)
+		}
 		md, ok := metadata.FromIncomingContext(ctx)
 		if !ok {
 			return nil, status.Error(codes.Unavailable, "metadata read error")
@@ -70,14 +69,6 @@ func getServerOptions(config *config.ServiceConfig, additionalInterceptors []grp
 		ctx = context.WithValue(ctx, HeaderValueContextKey, matchedHeaderValue)
 
 		return handler(ctx, req)
-	}}
-
-	if len(additionalInterceptors) > 0 {
-		interceptors = append(interceptors, additionalInterceptors...)
-	}
-
-	return []grpc.ServerOption{
-		grpc.ChainUnaryInterceptor(interceptors...),
 	}
 }
 

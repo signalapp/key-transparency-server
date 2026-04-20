@@ -188,6 +188,9 @@ func Read(filename string) (*Config, error) {
 		if parsed.KtQueryServiceConfig.ServerAddr == "" {
 			return nil, fmt.Errorf("field not provided for service kt-query: server-addr")
 		}
+		if parsed.KtQueryServiceConfig.AuthorizedHeaders == nil || len(parsed.KtQueryServiceConfig.AuthorizedHeaders) == 0 {
+			return nil, fmt.Errorf("field not provided for service kt-query: authorized-headers")
+		}
 		if parsed.APIConfig.MinimumSearchDelay == 0 {
 			return nil, fmt.Errorf("field not provided for service kt-query: min-search-delay")
 		}

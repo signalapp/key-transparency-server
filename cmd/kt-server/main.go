@@ -146,9 +146,11 @@ func main() {
 		})
 
 		// Register kt query server
-		ktQueryServer := grpc.NewServer(getServerOptions(config.KtQueryServiceConfig, []grpc.UnaryServerInterceptor{
-			grpc_recovery.UnaryServerInterceptor(logPanicOpt),
-		})...)
+		ktQueryServer := grpc.NewServer(
+			grpc.ChainUnaryInterceptor(
+				validateAuthorizedHeadersInterceptor(config.KtQueryServiceConfig),
+				grpc_recovery.UnaryServerInterceptor(logPanicOpt)),
+		)
 		pb.RegisterKeyTransparencyQueryServiceServer(ktQueryServer, ktQueryHandler)
 
 		util.Log().Infof("Starting kt-query server at: %v", config.KtQueryServiceConfig.ServerAddr)
@@ -243,11 +245,12 @@ func main() {
 			util.Log().Fatalf("Failed to create listener for kt server: %v", err)
 		}
 
-		ktServer := grpc.NewServer(getServerOptions(config.KtServiceConfig, []grpc.UnaryServerInterceptor{
-			// Downstream interceptors expect the auditor name to be stored in the context, so this interceptor must
-			// be listed first.
+		ktServer := grpc.NewServer(grpc.ChainUnaryInterceptor(
+			// storeAuditorNameInterceptor depends on the matched header value set by
+			// validateAuthorizedHeadersInterceptor, so order is important here.
+			validateAuthorizedHeadersInterceptor(ktServiceConfig),
 			storeAuditorNameInterceptor(config.KtServiceConfig),
-			grpcServiceNameMetricsInterceptor()})...)
+			grpcServiceNameMetricsInterceptor()))
 		pb.RegisterKeyTransparencyServiceServer(ktServer, ktHandler)
 		pb.RegisterKeyTransparencyAuditorServiceServer(ktServer, ktHandler)
 
@@ -274,7 +277,8 @@ func main() {
 			util.Log().Fatalf("Failed to create listener for kt test server: %v", err)
 		}
 
-		ktTestServer := grpc.NewServer(getServerOptions(config.KtTestServiceConfig, nil)...)
+		ktTestServer := grpc.NewServer(grpc.ChainUnaryInterceptor(
+			validateAuthorizedHeadersInterceptor(ktTestServiceConfig)))
 		pb.RegisterKeyTransparencyTestServiceServer(ktTestServer, updateHandler)
 		util.Log().Infof("Starting kt test server at: %v", ktTestServiceConfig.ServerAddr)
 		healthCheck.SetServingStatus(readiness, healthpb.HealthCheckResponse_SERVING)

@@ -10,6 +10,10 @@ kt:
 
 kt-query:
   server-addr: localhost:8080
+  authorized-headers:
+    ExampleHeader1:
+      - example value one
+      - example value two
 
 kt-test:
   server-addr: localhost:8081

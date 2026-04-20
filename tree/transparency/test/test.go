@@ -8,6 +8,7 @@ package test
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"errors"
 	mrand "math/rand"
 	"slices"
 	"testing"
@@ -71,7 +72,33 @@ func Last(store transparency.ClientStorage) *pb.Consistency {
 	return &pb.Consistency{Last: &head.TreeSize}
 }
 
+type commitFailStore struct {
+	db.TransparencyStore
+	commitCount int
+	failAfter   int
+}
+
+func (s *commitFailStore) Commit(head *db.TransparencyTreeHead, auditors map[string]*db.AuditorTreeHead) error {
+	s.commitCount++
+	if s.commitCount > s.failAfter {
+		return errors.New("commit failed")
+	}
+	return s.TransparencyStore.Commit(head, auditors)
+}
+
+func newCommitFailStore(inner db.TransparencyStore, failAfter int) *commitFailStore {
+	return &commitFailStore{
+		TransparencyStore: inner,
+		commitCount:       0,
+		failAfter:         failAfter,
+	}
+}
+
 func NewTree(t testing.TB, deploymentMode transparency.DeploymentMode) (*transparency.Tree, *MemoryClientStorage, *transparency.PrivateConfig, []ed25519.PrivateKey) {
+	return NewTreeWithStore(t, deploymentMode, db.NewMemoryTransparencyStore())
+}
+
+func NewTreeWithStore(t testing.TB, deploymentMode transparency.DeploymentMode, store db.TransparencyStore) (*transparency.Tree, *MemoryClientStorage, *transparency.PrivateConfig, []ed25519.PrivateKey) {
 	_, sigKey, err := ed25519.GenerateKey(nil)
 	if err != nil {
 		t.Fatal(err)
@@ -108,17 +135,17 @@ func NewTree(t testing.TB, deploymentMode transparency.DeploymentMode) (*transpa
 		auditorPrivateKeys = []ed25519.PrivateKey{auditor1PrivateKey, auditor2PrivateKey}
 	}
 
-	tree, err := transparency.NewTree(config, db.NewMemoryTransparencyStore())
+	tree, err := transparency.NewTree(config, store)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	store := &MemoryClientStorage{
+	clientStore := &MemoryClientStorage{
 		config: config.Public(),
 		data:   make(map[string]*transparency.MonitoringData),
 	}
 
-	return tree, store, config, auditorPrivateKeys
+	return tree, clientStore, config, auditorPrivateKeys
 }
 
 func RandomTree(tree *transparency.Tree, store transparency.ClientStorage, total int, keys, repeats []int) ([][]byte, error) {

@@ -10,11 +10,13 @@ import (
 	"errors"
 	mrand "math/rand"
 	"testing"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	"github.com/signalapp/keytransparency/cmd/shared"
+	"github.com/signalapp/keytransparency/db"
 	"github.com/signalapp/keytransparency/tree/transparency"
 	"github.com/signalapp/keytransparency/tree/transparency/math"
 	"github.com/signalapp/keytransparency/tree/transparency/pb"
@@ -107,6 +109,137 @@ func TestTreeWithAuditorHeads(t *testing.T) {
 		t.Fatal(err)
 	} else if !bytes.Equal(searchRes.Value.Value, value1) {
 		t.Fatal("unexpected value returned")
+	}
+}
+
+func TestTree_SetAuditorHead_FirstCommitFails(t *testing.T) {
+	tree, store, privateConfig, auditorPrivateKeys := NewTreeWithStore(t,
+		transparency.ThirdPartyAuditing,
+		// We want the commit to fail after 1 update
+		newCommitFailStore(db.NewMemoryTransparencyStore(), 1))
+
+	// Add a key to the new tree
+	key, value := random(), random()
+	updateReq := &pb.UpdateRequest{
+		SearchKey:   key,
+		Value:       value,
+		Consistency: Last(store),
+	}
+
+	_, err := tree.UpdateSimple(updateReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set auditor's first tree head
+	root, err := tree.GetLogTree().GetRoot(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	auditorHead, _, err := transparency.SignNewAuditorHead(auditorPrivateKeys[0], privateConfig.Public(), 1, root, exampleAuditorName1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = tree.SetAuditorHead(&pb.AuditorTreeHead{
+		TreeSize:  auditorHead.TreeSize,
+		Timestamp: auditorHead.Timestamp,
+		Signature: auditorHead.Signature,
+	}, exampleAuditorName1)
+	if err == nil {
+		t.Fatal(err)
+	}
+
+	// Search for the first key and check that no auditor tree head exists
+	searchReq := &pb.TreeSearchRequest{
+		SearchKey:   key,
+		Consistency: Last(store),
+	}
+	searchRes, err := tree.Search(searchReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(searchRes.GetTreeHead().GetFullAuditorTreeHeads()) > 0 {
+		t.Fatal("expected no auditor tree heads")
+	}
+}
+
+func TestTree_SetAuditorHead_SecondCommitFails(t *testing.T) {
+	tree, store, privateConfig, auditorPrivateKeys := NewTreeWithStore(t,
+		transparency.ThirdPartyAuditing,
+		// We want the commit to fail after two updates (1 simple update, 1 set auditor head)
+		newCommitFailStore(db.NewMemoryTransparencyStore(), 2))
+
+	// Add a key to the new tree
+	key1, value1 := random(), random()
+	updateReq1 := &pb.UpdateRequest{
+		SearchKey:   key1,
+		Value:       value1,
+		Consistency: Last(store),
+	}
+
+	_, err := tree.UpdateSimple(updateReq1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set auditor's first tree head
+	root, err := tree.GetLogTree().GetRoot(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	auditorHead1, _, err := transparency.SignNewAuditorHead(auditorPrivateKeys[0], privateConfig.Public(), 1, root, exampleAuditorName1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = tree.SetAuditorHead(&pb.AuditorTreeHead{
+		TreeSize:  auditorHead1.TreeSize,
+		Timestamp: auditorHead1.Timestamp,
+		Signature: auditorHead1.Signature,
+	}, exampleAuditorName1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set auditor's second tree head. It contains a unix timestamp in milliseconds
+	// so the signature will be different from the first one if we sleep for a millisecond.
+	time.Sleep(1 * time.Millisecond)
+	root, err = tree.GetLogTree().GetRoot(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	auditorHead2, _, err := transparency.SignNewAuditorHead(auditorPrivateKeys[0], privateConfig.Public(), 1, root, exampleAuditorName1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if bytes.Equal(auditorHead1.Signature, auditorHead2.Signature) {
+		t.Fatal("expected auditor heads to be different")
+	}
+
+	err = tree.SetAuditorHead(&pb.AuditorTreeHead{
+		TreeSize:  auditorHead2.TreeSize,
+		Timestamp: auditorHead2.Timestamp,
+		Signature: auditorHead2.Signature,
+	}, exampleAuditorName1)
+	if err == nil {
+		t.Fatal(err)
+	}
+
+	// Search for the first key and check that the stored auditor tree head is the first one
+	searchReq := &pb.TreeSearchRequest{
+		SearchKey:   key1,
+		Consistency: Last(store),
+	}
+	searchRes, err := tree.Search(searchReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	auditorTreeSize := searchRes.GetTreeHead().GetFullAuditorTreeHeads()[0].GetTreeHead().GetTreeSize()
+	signature := searchRes.GetTreeHead().GetFullAuditorTreeHeads()[0].GetTreeHead().GetSignature()
+	if auditorTreeSize != 1 || !bytes.Equal(signature, auditorHead1.Signature) {
+		t.Fatal("wrong auditor head")
 	}
 }
 

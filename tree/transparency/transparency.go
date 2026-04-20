@@ -1030,13 +1030,18 @@ func (t *Tree) SetAuditorHead(head *pb.AuditorTreeHead, auditorName string) erro
 		Consistency: consistency,
 	}
 
-	// Store in database and return.
+	// Save the old value in case the database commit fails
+	old, exists := t.auditors[auditorName]
+	t.auditors[auditorName] = auditor
+
 	if err := t.tx.Commit(t.latest, t.auditors); err != nil {
+		if exists {
+			t.auditors[auditorName] = old
+		} else {
+			delete(t.auditors, auditorName)
+		}
 		return err
 	}
-
-	// Update the auditor tree head for this auditor
-	t.auditors[auditorName] = auditor
 
 	return nil
 }

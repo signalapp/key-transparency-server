@@ -97,6 +97,20 @@ func TestVerifySearch(t *testing.T) {
 	}
 	req.SearchKey[0] ^= 1
 
+	// Check that omitting the service operator's signature(s) errors out
+	signatures := res.TreeHead.TreeHead.Signatures
+	res.TreeHead.TreeHead.Signatures = nil
+	if err := transparency.VerifySearch(store, req, res); err == nil {
+		t.Fatal("expected error")
+	}
+	res.TreeHead.TreeHead.Signatures = signatures
+
+	res.TreeHead.TreeHead.Signatures = []*pb.Signature{}
+	if err := transparency.VerifySearch(store, req, res); err == nil {
+		t.Fatal("expected error")
+	}
+	res.TreeHead.TreeHead.Signatures = signatures
+
 	// Check that unmodified proof verifies.
 	if err := transparency.VerifySearch(store, req, res); err != nil {
 		t.Fatal(err)

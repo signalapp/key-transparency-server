@@ -119,6 +119,11 @@ func verifyTreeHead(config *PublicConfig, head *pb.TreeHead, root []byte) error 
 		Timestamp: head.Timestamp,
 		Root:      root,
 	}
+
+	if len(head.Signatures) == 0 {
+		return errors.New("expected at least one key transparency service signature")
+	}
+
 	for _, signature := range head.Signatures {
 		if config.Mode == ThirdPartyAuditing {
 			err := verifyAuditorPublicKey(config.AuditorKeys, signature.AuditorPublicKey)

@@ -1043,6 +1043,10 @@ func (t *Tree) SetAuditorHead(head *pb.AuditorTreeHead, auditorName string) erro
 		return err
 	}
 
+	labels := []metrics.Label{{"auditor", auditorName}}
+	metrics.SetGaugeWithLabels([]string{"set_auditor_head.signature_latency_seconds"}, float32(time.Duration(now-then)/time.Second), labels)
+	metrics.SetGaugeWithLabels([]string{"set_auditor_head.tree_size"}, float32(head.TreeSize), labels)
+
 	return nil
 }
 

@@ -67,6 +67,12 @@ func distinguishedUpdate(updateHandler *KtUpdateHandler) {
 		}, 5*time.Second)
 		metrics.IncrCounterWithLabels([]string{"distinguished_update"}, 1, []metrics.Label{successLabel(err)})
 		if err == nil {
+			treeHead, _, err := updateHandler.tx.GetHead()
+			if err != nil {
+				util.Log().Warnf("failed to fetch head: %v", err)
+				return
+			}
+			metrics.SetGauge([]string{"distinguished.tree_size"}, float32(treeHead.TreeSize))
 			return
 		}
 		util.Log().Warnf("Failed to update distinguished key: %v", err)

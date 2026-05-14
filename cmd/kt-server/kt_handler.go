@@ -30,7 +30,6 @@ type KtHandler struct {
 	ch                 chan<- updateRequest
 	auditorTreeHeadsCh chan<- updateAuditorTreeHeadRequest // Channel used to set auditor tree heads
 
-	pb.UnimplementedKeyTransparencyServiceServer
 	pb.UnimplementedKeyTransparencyAuditorServiceServer
 }
 

@@ -251,7 +251,6 @@ func main() {
 			validateAuthorizedHeadersInterceptor(ktServiceConfig),
 			storeAuditorNameInterceptor(config.KtServiceConfig),
 			grpcServiceNameMetricsInterceptor()))
-		pb.RegisterKeyTransparencyServiceServer(ktServer, ktHandler)
 		pb.RegisterKeyTransparencyAuditorServiceServer(ktServer, ktHandler)
 
 		util.Log().Infof("Starting kt server at: %v", ktServiceConfig.ServerAddr)

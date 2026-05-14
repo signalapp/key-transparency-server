@@ -27,18 +27,6 @@ message TreeSizeResponse {
   uint64 tree_size = 1;
 }
 
-// A key transparency service used to update the transparency log and to accept auditor-signed tree heads.
-// With the exception of the third-party auditor, this service's endpoints are *not* intended to be used by external clients.
-// It is exposed to the public internet by necessity but will reject calls from unauthenticated callers.
-service KeyTransparencyService {
-  // Auditors can query this endpoint to learn the current size of the transparency log.
-  rpc TreeSize(google.protobuf.Empty) returns (TreeSizeResponse) {}
-  // Auditors use this endpoint to request a batch of key transparency service updates to audit.
-  rpc Audit(AuditRequest) returns (AuditResponse) {}
-  // Auditors use this endpoint to return a signature on the log tree root hash corresponding to the last audited update.
-  rpc SetAuditorHead(transparency.AuditorTreeHead) returns (google.protobuf.Empty) {}
-}
-
 // A key transparency service used to provide data to auditors and to accept auditor-signed tree heads.
 // Outside of third-party auditors, this service's endpoints are *not* intended to be used by external clients.
 // It is exposed to the public internet by necessity but will reject calls from unauthenticated callers.

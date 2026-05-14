@@ -65,24 +65,15 @@ func (h *KtUpdateHandler) update(ctx context.Context, req *tpb.UpdateRequest, ti
 	select {
 	case res := <-ch:
 		if res.err != nil {
-			var internalErrReason string
-			switch {
-			case errors.Is(res.err, transparency.ErrTombstoneIndexNotFound):
-				internalErrReason = "tombstone_index_not_found"
-			case errors.Is(res.err, transparency.ErrTombstoneUnexpectedPreUpdateValue):
-				internalErrReason = "tombstone_unexpected_pre_update_value"
-			case errors.Is(res.err, transparency.ErrDuplicateUpdate):
-				internalErrReason = "duplicate_update"
-			}
-
-			if internalErrReason != "" {
+			if errors.Is(res.err, transparency.ErrDuplicateUpdate) {
 				searchKeyTypeLabel, err := GetSearchKeyTypeLabel(req.SearchKey)
 				if err != nil {
 					return nil, err
 				}
-				metrics.IncrCounterWithLabels([]string{"internal_update_error"}, 1, []metrics.Label{searchKeyTypeLabel, {Name: "reason", Value: internalErrReason}})
+				metrics.IncrCounterWithLabels([]string{"internal_update_error"}, 1, []metrics.Label{searchKeyTypeLabel, {Name: "reason", Value: "duplicate_update"}})
 				return nil, nil
 			}
+
 			return nil, res.err
 		}
 		if req.ReturnUpdateResponse {

@@ -45,12 +45,10 @@ const (
 )
 
 var (
-	ErrInvalidArgument                   = errors.New("invalid request argument")
-	ErrOutOfRange                        = errors.New("querying past end of log")
-	ErrFailedPrecondition                = errors.New("failed precondition")
-	ErrDuplicateUpdate                   = errors.New("duplicate update")
-	ErrTombstoneIndexNotFound            = errors.New("tombstone index not found")
-	ErrTombstoneUnexpectedPreUpdateValue = errors.New("tombstone unexpected pre-update value")
+	ErrInvalidArgument    = errors.New("invalid request argument")
+	ErrOutOfRange         = errors.New("querying past end of log")
+	ErrFailedPrecondition = errors.New("failed precondition")
+	ErrDuplicateUpdate    = errors.New("duplicate update")
 )
 
 type ErrAuditorSignatureVerificationFailed struct {
@@ -438,44 +436,6 @@ func (t *Tree) PostUpdate(state *PostUpdateState) (*pb.UpdateResponse, error) {
 
 		Opening: state.opening,
 	}, nil
-}
-
-// UpdateExistingIndexWithTombstoneValue handles "tombstone updates", updates that overwrite
-// an existing index to point to a tombstone value to reflect the state of the world when a user
-// deletes an account or changes their phone number or username.
-// It looks up the current mapped value of the index and checks that it matches the expected mapped value
-// to prevent incorrect state resulting from a race between the tombstone update and another user claiming
-// the old identifier.
-func (t *Tree) UpdateExistingIndexWithTombstoneValue(state *PreUpdateState) (*PostUpdateState, error) {
-	result, err := t.prefixTree.Search(t.latest.TreeSize, state.Index[:])
-	if err != nil {
-		if gprcError, ok := status.FromError(err); ok && gprcError.Code() == codes.NotFound {
-			return nil, ErrTombstoneIndexNotFound
-		}
-		return nil, err
-	}
-
-	raw, err := t.tx.Get(result.LatestUpdatePosition)
-	if err != nil {
-		return nil, err
-	}
-	updateValue, err := unmarshalUpdateValue(raw)
-	if err != nil {
-		return nil, err
-	}
-
-	if !bytes.Equal(updateValue.GetValue(), state.Req.GetExpectedPreUpdateValue()) {
-		// We would hit this case if another user claimed the old identifier, and their update made it into the log
-		// before the tombstone update did. Abort the tombstone update.
-		return nil, ErrTombstoneUnexpectedPreUpdateValue
-	}
-
-	postUpdateState, err := t.BatchUpdate([]*PreUpdateState{state})
-	if err != nil {
-		return nil, err
-	}
-	return postUpdateState[0], nil
-
 }
 
 // BatchUpdate takes in a batch of PreUpdateStates, each containing a search key

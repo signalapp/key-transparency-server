@@ -14,10 +14,10 @@ import (
 	metrics "github.com/hashicorp/go-metrics"
 	"github.com/hashicorp/go-metrics/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	ktmetrics "github.com/signalapp/keytransparency/cmd/kt-server/metrics"
 	"google.golang.org/grpc/status"
 
 	"github.com/signalapp/keytransparency/cmd/internal/util"
+	ktmetrics "github.com/signalapp/keytransparency/cmd/kt-server/metrics"
 )
 
 func successLabel(err error) metrics.Label {
@@ -35,6 +35,10 @@ func grpcStatusLabel(err error) metrics.Label {
 
 func realLabel(real bool) metrics.Label {
 	return metrics.Label{Name: "real", Value: fmt.Sprint(real)}
+}
+
+func tombstoneLabel(tombstone bool) metrics.Label {
+	return metrics.Label{Name: "tombstone", Value: fmt.Sprint(tombstone)}
 }
 
 func endpointLabel(endpoint string) metrics.Label {

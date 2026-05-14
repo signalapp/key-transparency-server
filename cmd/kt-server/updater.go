@@ -6,10 +6,10 @@
 package main
 
 import (
-	"strconv"
 	"time"
 
 	metrics "github.com/hashicorp/go-metrics"
+
 	"github.com/signalapp/keytransparency/cmd/internal/config"
 	"github.com/signalapp/keytransparency/cmd/internal/util"
 	"github.com/signalapp/keytransparency/tree/transparency"
@@ -52,7 +52,8 @@ func updater(tree *transparency.Tree, ch chan updateRequest, auditorTreeHeadsCh 
 					numFakeUpdatesNeeded := fake.Count - sinceLastTick
 					start := time.Now()
 					err := tree.BatchUpdateFake(numFakeUpdatesNeeded)
-					incrementInsertMetrics(err, start, float32(numFakeUpdatesNeeded), false, false)
+					metrics.IncrCounterWithLabels([]string{"inserts"}, float32(numFakeUpdatesNeeded), []metrics.Label{realLabel(false), successLabel(err)})
+					incrementInsertOperationMetrics(err, start, float32(numFakeUpdatesNeeded), false)
 					if err != nil {
 						util.Log().Warnf("Error applying fake updates: %v", err)
 						continue
@@ -62,32 +63,29 @@ func updater(tree *transparency.Tree, ch chan updateRequest, auditorTreeHeadsCh 
 			sinceLastTick = 0
 
 		case first := <-ch: // Handle a real request to update the tree.
-			// Check if it's a tombstone update. If so, write the update immediately instead of starting a batch.
-			if isTombstoneUpdate(first.req.Req) {
-				handleTombstoneUpdate(tree, first)
-				sinceLastTick++
-				continue
-			}
+			reqs := collectBatch(ch, first)
 
-			// Collect any additional updates requests already in the channel, stopping at the first tombstone update.
-			// It's important to write the tombstone update in order and separately to prevent incorrect state
-			// resulting from a race between the tombstone update and another user claiming the old identifier.
-			additionalNonTombstoneUpdates, tombstoneUpdate := collectUpdateBatch(ch)
-			allNonTombstoneUpdates := append([]updateRequest{first}, additionalNonTombstoneUpdates...)
+			states := make([]*transparency.PreUpdateState, len(reqs))
+			tombstoneCount := 0
 
-			start := time.Now()
-
-			// Handle the non-tombstone updates
-			states := make([]*transparency.PreUpdateState, len(allNonTombstoneUpdates))
-			for i, req := range allNonTombstoneUpdates {
+			for i, req := range reqs {
+				if isTombstoneUpdate(req.req.Req) {
+					tombstoneCount++
+				}
 				states[i] = req.req
 			}
+
+			start := time.Now()
 			res, err := tree.BatchUpdate(states)
 
-			incrementInsertMetrics(err, start, float32(len(states)), true, false)
-			sinceLastTick += len(allNonTombstoneUpdates)
+			streamCount := len(reqs) - tombstoneCount
+			metrics.IncrCounterWithLabels([]string{"inserts"}, float32(streamCount), []metrics.Label{realLabel(true), successLabel(err), tombstoneLabel(false)})
+			metrics.IncrCounterWithLabels([]string{"inserts"}, float32(tombstoneCount), []metrics.Label{realLabel(true), successLabel(err), tombstoneLabel(true)})
+			incrementInsertOperationMetrics(err, start, float32(len(states)), true)
 
-			for i, req := range allNonTombstoneUpdates {
+			sinceLastTick += len(reqs)
+
+			for i, req := range reqs {
 				// These channel writes are guaranteed to not block, since this is the
 				// only time we write to them, and they're buffered channels of size 1.
 				if err == nil {
@@ -101,12 +99,6 @@ func updater(tree *transparency.Tree, ch chan updateRequest, auditorTreeHeadsCh 
 				}
 			}
 
-			// Handle the tombstone update
-			if tombstoneUpdate != nil {
-				handleTombstoneUpdate(tree, *tombstoneUpdate)
-				sinceLastTick++
-			}
-
 		case req := <-auditorTreeHeadsCh: // We received a new tree head from our auditor.
 			if err := tree.SetAuditorHead(req.auditorTreeHead, req.auditorName); err != nil {
 				util.Log().Warnf("Error updating auditor head: %v", err)
@@ -118,43 +110,22 @@ func updater(tree *transparency.Tree, ch chan updateRequest, auditorTreeHeadsCh 
 	}
 }
 
-// collectUpdateBatch drains update requests from the provided channel, discarding the update if it will not change the value
-// of its most recent mapping and stopping at the first tombstone update it encounters.
-// Returns the batch of update requests and any tombstone update encountered.
-func collectUpdateBatch(ch chan updateRequest) ([]updateRequest, *updateRequest) {
-	var reqs []updateRequest
+// drainChannel drains update requests from the provided channel.
+func collectBatch(ch chan updateRequest, first updateRequest) []updateRequest {
+	reqs := []updateRequest{first}
 
 	for {
 		select {
 		case req := <-ch:
-			// If the channel receives a tombstone update, return the batch of updates so far
-			// separate from the tombstone update.
-			if isTombstoneUpdate(req.req.Req) {
-				return reqs, &req
-			}
 			reqs = append(reqs, req)
 		default:
-			return reqs, nil
+			return reqs
 		}
 	}
 }
 
-func incrementInsertMetrics(err error, start time.Time, batchSize float32, real bool, tombstone bool) {
-	tombstoneLabel := metrics.Label{Name: "tombstone", Value: strconv.FormatBool(tombstone)}
-	metrics.IncrCounterWithLabels([]string{"inserts"}, batchSize, []metrics.Label{realLabel(real), successLabel(err), tombstoneLabel})
-	metrics.IncrCounterWithLabels([]string{"insert_operations"}, 1, []metrics.Label{realLabel(real), successLabel(err), grpcStatusLabel(err), tombstoneLabel})
-	metrics.AddSampleWithLabels([]string{"insert_batch_size"}, batchSize, []metrics.Label{realLabel(real), successLabel(err), tombstoneLabel})
-	metrics.MeasureSinceWithLabels([]string{"insert_duration"}, start, []metrics.Label{realLabel(real), successLabel(err), tombstoneLabel})
-}
-
-func handleTombstoneUpdate(tree *transparency.Tree, internalUpdateRequest updateRequest) {
-	start := time.Now()
-	res, err := tree.UpdateExistingIndexWithTombstoneValue(internalUpdateRequest.req)
-	incrementInsertMetrics(err, start, 1, true, true)
-
-	if err == nil {
-		internalUpdateRequest.res <- updateResponse{res: res, err: nil}
-	} else {
-		internalUpdateRequest.res <- updateResponse{res: nil, err: err}
-	}
+func incrementInsertOperationMetrics(err error, start time.Time, batchSize float32, real bool) {
+	metrics.IncrCounterWithLabels([]string{"insert_operations"}, 1, []metrics.Label{realLabel(real), successLabel(err), grpcStatusLabel(err)})
+	metrics.AddSampleWithLabels([]string{"insert_batch_size"}, batchSize, []metrics.Label{realLabel(real), successLabel(err)})
+	metrics.MeasureSinceWithLabels([]string{"insert_duration"}, start, []metrics.Label{realLabel(real), successLabel(err)})
 }

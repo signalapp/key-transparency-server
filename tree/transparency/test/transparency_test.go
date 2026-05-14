@@ -7,7 +7,6 @@ package test
 
 import (
 	"bytes"
-	"errors"
 	mrand "math/rand"
 	"testing"
 	"time"
@@ -15,7 +14,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/signalapp/keytransparency/cmd/shared"
 	"github.com/signalapp/keytransparency/db"
 	"github.com/signalapp/keytransparency/tree/transparency"
 	"github.com/signalapp/keytransparency/tree/transparency/math"
@@ -509,176 +507,6 @@ func TestMonitorCommitmentIndexValidation(t *testing.T) {
 	_, err = tree.Monitor(reqMismatchedIndex)
 	if err == nil {
 		t.Fatal("request succeeded with mismatched commitment index")
-	}
-}
-
-func TestTombstoneUpdate_IndexExists_ExpectedValueMatches(t *testing.T) {
-	tree, store, _, _ := NewTree(t, transparency.ContactMonitoring)
-
-	// Insert a search key
-	searchKey := append([]byte{shared.AciPrefix}, []byte("searchKey")...)
-	originalValue := append([]byte{testValuePrefix}, []byte("value1")...)
-
-	preUpdate, err := tree.PreUpdate(&pb.UpdateRequest{
-		SearchKey:   searchKey,
-		Value:       originalValue,
-		Consistency: &pb.Consistency{},
-	})
-
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	_, err = tree.BatchUpdate([]*transparency.PreUpdateState{preUpdate})
-
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Update the search key with the tombstone value
-	preUpdate, err = tree.PreUpdate(&pb.UpdateRequest{
-		SearchKey:              searchKey,
-		Value:                  tombstoneValue,
-		Consistency:            &pb.Consistency{},
-		ExpectedPreUpdateValue: originalValue,
-	})
-
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	_, err = tree.UpdateExistingIndexWithTombstoneValue(preUpdate)
-
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	req := &pb.TreeSearchRequest{
-		SearchKey:   searchKey,
-		Consistency: Last(store),
-	}
-	res, err := tree.Search(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Search key should now map to tombstone value
-	if !bytes.Equal(res.Value.Value, tombstoneValue) {
-		t.Fatal("unexpected mapped value")
-	}
-}
-
-func TestTombstoneUpdate_IndexExists_ExpectedValueDoesNotMatch(t *testing.T) {
-	tree, store, _, _ := NewTree(t, transparency.ContactMonitoring)
-
-	// Insert a search key
-	searchKey := append([]byte{shared.AciPrefix}, []byte("searchKey")...)
-	originalValue := append([]byte{testValuePrefix}, []byte("value1")...)
-
-	preUpdate, err := tree.PreUpdate(&pb.UpdateRequest{
-		SearchKey:   searchKey,
-		Value:       originalValue,
-		Consistency: &pb.Consistency{},
-	})
-
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	_, err = tree.BatchUpdate([]*transparency.PreUpdateState{preUpdate})
-
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Pass in a different expected pre-update value from what exists in the tree
-	differentValue := append([]byte{testValuePrefix}, []byte("value2")...)
-	preUpdate, err = tree.PreUpdate(&pb.UpdateRequest{
-		SearchKey:              searchKey,
-		Value:                  tombstoneValue,
-		Consistency:            &pb.Consistency{},
-		ExpectedPreUpdateValue: differentValue,
-	})
-
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Expected pre-update value does not match what's in the tree; abort update
-	// and check that the search key still maps to original value
-	_, err = tree.UpdateExistingIndexWithTombstoneValue(preUpdate)
-
-	if !errors.Is(err, transparency.ErrTombstoneUnexpectedPreUpdateValue) {
-		t.Fatalf("Expected error %v", transparency.ErrTombstoneUnexpectedPreUpdateValue)
-	}
-
-	// Search key should still map to original value
-	req := &pb.TreeSearchRequest{
-		SearchKey:   searchKey,
-		Consistency: Last(store),
-	}
-	res, err := tree.Search(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if !bytes.Equal(res.Value.Value, originalValue) {
-		t.Fatal("unexpected mapped value")
-	}
-}
-
-func TestTombstoneUpdate_IndexNotFound(t *testing.T) {
-	tree, store, _, _ := NewTree(t, transparency.ContactMonitoring)
-
-	// Insert a search key
-	searchKey := append([]byte{shared.AciPrefix}, []byte("searchKey")...)
-	originalValue := append([]byte{testValuePrefix}, []byte("value1")...)
-
-	preUpdate, err := tree.PreUpdate(&pb.UpdateRequest{
-		SearchKey:   searchKey,
-		Value:       originalValue,
-		Consistency: &pb.Consistency{},
-	})
-
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	_, err = tree.BatchUpdate([]*transparency.PreUpdateState{preUpdate})
-
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Update a different search key with the tombstone value
-	differentSearchKey := append([]byte{shared.AciPrefix}, []byte("differentSearchKey")...)
-	preUpdate, err = tree.PreUpdate(&pb.UpdateRequest{
-		SearchKey:              differentSearchKey,
-		Value:                  tombstoneValue,
-		Consistency:            &pb.Consistency{},
-		ExpectedPreUpdateValue: originalValue,
-	})
-
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Index should not be found; abort update
-	_, err = tree.UpdateExistingIndexWithTombstoneValue(preUpdate)
-
-	if !errors.Is(err, transparency.ErrTombstoneIndexNotFound) {
-		t.Fatalf("Expected error %v", transparency.ErrTombstoneIndexNotFound)
-	}
-
-	// That different search key should still not be found
-	req := &pb.TreeSearchRequest{
-		SearchKey:   differentSearchKey,
-		Consistency: Last(store),
-	}
-
-	_, err = tree.Search(req)
-	if gprcError, ok := status.FromError(err); !ok || gprcError.Code() != codes.NotFound {
-		t.Fatal("Expected `not found` error, got ", err)
 	}
 }
 

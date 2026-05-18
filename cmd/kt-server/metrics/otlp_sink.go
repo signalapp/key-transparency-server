@@ -10,12 +10,13 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-metrics"
-	"github.com/signalapp/keytransparency/cmd/internal/util"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/metric"
 	metricSDK "go.opentelemetry.io/otel/sdk/metric"
+
+	"github.com/signalapp/keytransparency/cmd/internal/util"
 )
 
 type OTLPSink struct {
@@ -35,7 +36,23 @@ func NewOTLPSink(ctx context.Context) (*OTLPSink, error) {
 	if err != nil {
 		return nil, fmt.Errorf("creating new otlp meter exporter: %w", err)
 	}
-	meterProvider := metricSDK.NewMeterProvider(metricSDK.WithReader(metricSDK.NewPeriodicReader(metricExporter)))
+
+	histogramView := metricSDK.NewView(
+		metricSDK.Instrument{
+			Kind: metricSDK.InstrumentKindHistogram,
+		},
+		metricSDK.Stream{
+			Aggregation: metricSDK.AggregationBase2ExponentialHistogram{
+				// These are the default OTLP values (https://opentelemetry.io/docs/specs/otel/metrics/sdk/#base2-exponential-bucket-histogram-aggregation)
+				MaxSize:  160,
+				MaxScale: 20,
+			},
+		},
+	)
+
+	meterProvider := metricSDK.NewMeterProvider(
+		metricSDK.WithReader(metricSDK.NewPeriodicReader(metricExporter)),
+		metricSDK.WithView(histogramView))
 	otel.SetMeterProvider(meterProvider)
 
 	meter := otel.Meter(metrics.Default().ServiceName)

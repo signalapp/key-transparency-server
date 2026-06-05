@@ -74,8 +74,7 @@ func handleSearch(client pb.KeyTransparencyQueryServiceClient) {
 	if *last != -1 {
 		// Verifying the consistency proof would require persistent state, which kt-client doesn't have,
 		// so we nullify these fields.
-		res.TreeHead.Last = nil
-		res.TreeHead.Distinguished = nil
+		removeConsistencyProofsForStatelessVerification(res.TreeHead)
 	}
 
 	allVerificationsSuccessful := true
@@ -112,6 +111,14 @@ func createTreeSearchRequest(key []byte) *tpb.TreeSearchRequest {
 		SearchKey:   key,
 		Consistency: consistency(last),
 	}
+}
+
+func removeConsistencyProofsForStatelessVerification(treeHead *tpb.FullTreeHead) {
+	if treeHead == nil {
+		return
+	}
+	treeHead.Last = nil
+	treeHead.Distinguished = nil
 }
 
 func createTreeSearchResponse(response *pb.CondensedTreeSearchResponse, treeHead *tpb.FullTreeHead) *tpb.TreeSearchResponse {

@@ -16,6 +16,7 @@ import (
 	"github.com/signalapp/keytransparency/cmd/kt-server/pb"
 	"github.com/signalapp/keytransparency/cmd/shared"
 	"github.com/signalapp/keytransparency/db"
+	logtree "github.com/signalapp/keytransparency/tree/log"
 	tpb "github.com/signalapp/keytransparency/tree/transparency/pb"
 )
 
@@ -42,6 +43,68 @@ func TestDistinguished_NilRequest(t *testing.T) {
 	if grpcError, ok := status.FromError(err); grpcError.Code() != codes.InvalidArgument || !ok {
 		t.Fatalf("Expected %v, got %v",
 			codes.InvalidArgument, err)
+	}
+}
+
+func TestDistinguished_LastReturnsConsistencyProof(t *testing.T) {
+	mockConfig, _ := config.Read(mockConfigFile)
+	mockTransparencyStore := db.NewMemoryTransparencyStore()
+	accountDb := db.MockAccountDB{}
+	h := KtQueryHandler{config: mockConfig.APIConfig, tx: mockTransparencyStore, accountDB: &accountDb}
+
+	tree, err := mockConfig.APIConfig.NewTree(mockTransparencyStore)
+	if err != nil {
+		t.Fatalf("Unexpected error creating tree, %v", err)
+	}
+
+	_, err = tree.UpdateSimple(&tpb.UpdateRequest{
+		SearchKey:   []byte(distinguishedSearchKey),
+		Value:       []byte("1"),
+		Consistency: &tpb.Consistency{},
+	})
+	if err != nil {
+		t.Fatalf("Unexpected error updating distinguished key, %v", err)
+	}
+
+	last := tree.GetTransparencyTreeHead().TreeSize
+	lastRoot, err := tree.GetLogTree().GetRoot(last)
+	if err != nil {
+		t.Fatalf("Unexpected error getting previous root, %v", err)
+	}
+
+	_, err = tree.UpdateSimple(&tpb.UpdateRequest{
+		SearchKey:   random(16),
+		Value:       []byte("2"),
+		Consistency: &tpb.Consistency{},
+	})
+	if err != nil {
+		t.Fatalf("Unexpected error updating tree, %v", err)
+	}
+
+	resp, err := h.distinguished(&pb.DistinguishedRequest{Last: &last})
+	if err != nil {
+		t.Fatalf("Unexpected error looking up distinguished key, %v", err)
+	}
+	if resp.TreeHead == nil || resp.TreeHead.TreeHead == nil {
+		t.Fatal("Expected tree head")
+	}
+	if len(resp.TreeHead.Last) == 0 {
+		t.Fatal("Expected last consistency proof")
+	}
+	if len(resp.TreeHead.Distinguished) == 0 {
+		t.Fatal("Expected distinguished consistency proof")
+	}
+
+	current := resp.TreeHead.TreeHead.TreeSize
+	currentRoot, err := tree.GetLogTree().GetRoot(current)
+	if err != nil {
+		t.Fatalf("Unexpected error getting current root, %v", err)
+	}
+	if err := logtree.VerifyConsistencyProof(last, current, resp.TreeHead.Last, lastRoot, currentRoot); err != nil {
+		t.Fatalf("Expected valid last consistency proof, got %v", err)
+	}
+	if err := logtree.VerifyConsistencyProof(last, current, resp.TreeHead.Distinguished, lastRoot, currentRoot); err != nil {
+		t.Fatalf("Expected valid distinguished consistency proof, got %v", err)
 	}
 }
 

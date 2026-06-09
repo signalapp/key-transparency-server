@@ -12,15 +12,15 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-metrics"
-	"github.com/signalapp/keytransparency/cmd/internal/util"
-	"github.com/signalapp/keytransparency/tree/transparency"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/signalapp/keytransparency/cmd/internal/config"
+	"github.com/signalapp/keytransparency/cmd/internal/util"
 	"github.com/signalapp/keytransparency/cmd/kt-server/pb"
 	"github.com/signalapp/keytransparency/db"
+	"github.com/signalapp/keytransparency/tree/transparency"
 	tpb "github.com/signalapp/keytransparency/tree/transparency/pb"
 )
 
@@ -52,7 +52,7 @@ func (h *KtHandler) Audit(ctx context.Context, req *pb.AuditRequest) (*pb.AuditR
 
 	start := time.Now()
 	res, err := h.audit(ctx, req)
-	labels := []metrics.Label{successLabel(err), auditorLabel(auditor)}
+	labels := []metrics.Label{successLabel(err), auditorLabel(auditor), grpcStatusLabel(err)}
 	metrics.IncrCounterWithLabels([]string{"audit_requests"}, 1, labels)
 	metrics.MeasureSinceWithLabels([]string{"audit_duration"}, start, labels)
 	return res, err
@@ -85,7 +85,7 @@ func (h *KtHandler) SetAuditorHead(ctx context.Context, head *tpb.AuditorTreeHea
 		return nil, err
 	}
 	res, err := h.setAuditorHead(ctx, head, auditor)
-	labels := []metrics.Label{successLabel(err), auditorLabel(auditor)}
+	labels := []metrics.Label{successLabel(err), auditorLabel(auditor), grpcStatusLabel(err)}
 	metrics.IncrCounterWithLabels([]string{"auditor_head_requests"}, 1, labels)
 	metrics.MeasureSinceWithLabels([]string{"auditor_head_duration"}, start, labels)
 	return res, err

@@ -11,6 +11,7 @@ import (
 	"crypto/subtle"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/hashicorp/go-metrics"
 	"google.golang.org/grpc"
@@ -19,6 +20,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/signalapp/keytransparency/cmd/internal/config"
+	"github.com/signalapp/keytransparency/cmd/internal/util"
 	"github.com/signalapp/keytransparency/cmd/shared"
 	"github.com/signalapp/keytransparency/tree/transparency/pb"
 )
@@ -94,20 +96,40 @@ func storeAuditorNameInterceptor(config *config.ServiceConfig) func(ctx context.
 	}
 }
 
-func grpcServiceNameMetricsInterceptor() grpc.UnaryServerInterceptor {
+func metricsInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		service, method, err := parseFullMethodString(info.FullMethod)
-		if err != nil {
-			return nil, err
-		}
-		auditorName, ok := ctx.Value(AuditorNameContextKey).(string)
-		if !ok {
-			return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("invalid type for auditor name. expected string, got %T", auditorName))
-		}
-		labels := []metrics.Label{{Name: "grpcService", Value: service}, {Name: "method", Value: method}, {Name: "auditor", Value: auditorName}}
-		metrics.IncrCounterWithLabels([]string{"kt_handler"}, 1, labels)
+		start := time.Now()
+		res, err := handler(ctx, req)
 
-		return handler(ctx, req)
+		service, method, parseErr := parseFullMethodString(info.FullMethod)
+		var labels []metrics.Label
+		if parseErr != nil {
+			util.Log().Warnf("failed to parse full method name for %s: %v", info.FullMethod, parseErr)
+		} else {
+			labels = append(labels, []metrics.Label{{Name: "method", Value: method}, {Name: "service", Value: service}}...)
+		}
+
+		// Extract the auditor name from the context if it exists
+		auditor := ctx.Value(AuditorNameContextKey)
+		if auditor != nil {
+			auditorName, ok := auditor.(string)
+			if !ok {
+				util.Log().Warnf("invalid type for auditor name. expected string, got %T", auditorName)
+			} else {
+				labels = append(labels, metrics.Label{Name: "auditor", Value: auditorName})
+			}
+		}
+
+		grpcStatus, _ := status.FromError(err)
+		grpcCode := grpcStatus.Code()
+		if grpcCode == codes.Unknown {
+			util.Log().Errorf("Unknown error from %s.%s: %v", service, method, grpcStatus)
+		}
+		labels = append(labels, metrics.Label{Name: "grpcStatus", Value: grpcCode.String()})
+
+		metrics.IncrCounterWithLabels([]string{"requests"}, 1, labels)
+		metrics.MeasureSinceWithLabels([]string{"total_duration"}, start, labels)
+		return res, err
 	}
 }
 

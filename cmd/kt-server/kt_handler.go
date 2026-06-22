@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/hashicorp/go-metrics"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -34,28 +33,12 @@ type KtHandler struct {
 }
 
 func (h *KtHandler) TreeSize(ctx context.Context, req *emptypb.Empty) (*pb.TreeSizeResponse, error) {
-	auditor, err := extractAuditorName(ctx)
-	if err != nil {
-		return nil, err
-	}
 	tree, err := h.config.NewTree(h.tx)
-	labels := []metrics.Label{successLabel(err), auditorLabel(auditor)}
-	metrics.IncrCounterWithLabels([]string{"tree_size_requests"}, 1, labels)
 	return &pb.TreeSizeResponse{TreeSize: tree.GetTransparencyTreeHead().TreeSize}, err
 }
 
 func (h *KtHandler) Audit(ctx context.Context, req *pb.AuditRequest) (*pb.AuditResponse, error) {
-	auditor, err := extractAuditorName(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	start := time.Now()
-	res, err := h.audit(ctx, req)
-	labels := []metrics.Label{successLabel(err), auditorLabel(auditor), grpcStatusLabel(err)}
-	metrics.IncrCounterWithLabels([]string{"audit_requests"}, 1, labels)
-	metrics.MeasureSinceWithLabels([]string{"audit_duration"}, start, labels)
-	return res, err
+	return h.audit(ctx, req)
 }
 
 func (h *KtHandler) audit(ctx context.Context, req *pb.AuditRequest) (*pb.AuditResponse, error) {
@@ -79,16 +62,11 @@ func (h *KtHandler) audit(ctx context.Context, req *pb.AuditRequest) (*pb.AuditR
 }
 
 func (h *KtHandler) SetAuditorHead(ctx context.Context, head *tpb.AuditorTreeHead) (*emptypb.Empty, error) {
-	start := time.Now()
 	auditor, err := extractAuditorName(ctx)
 	if err != nil {
 		return nil, err
 	}
-	res, err := h.setAuditorHead(ctx, head, auditor)
-	labels := []metrics.Label{successLabel(err), auditorLabel(auditor), grpcStatusLabel(err)}
-	metrics.IncrCounterWithLabels([]string{"auditor_head_requests"}, 1, labels)
-	metrics.MeasureSinceWithLabels([]string{"auditor_head_duration"}, start, labels)
-	return res, err
+	return h.setAuditorHead(ctx, head, auditor)
 }
 
 func (h *KtHandler) setAuditorHead(ctx context.Context, head *tpb.AuditorTreeHead, auditorName string) (*emptypb.Empty, error) {

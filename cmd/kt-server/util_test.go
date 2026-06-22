@@ -10,6 +10,7 @@ import (
 	"crypto/rand"
 	"testing"
 
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -17,6 +18,8 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/signalapp/keytransparency/cmd/internal/config"
+	"github.com/signalapp/keytransparency/cmd/internal/util"
+	"github.com/signalapp/keytransparency/cmd/kt-server/pb"
 	"github.com/signalapp/keytransparency/cmd/shared"
 )
 
@@ -247,5 +250,48 @@ func TestGetSearchKeyType(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+var testMetricsInterceptorErr = []codes.Code{
+	codes.InvalidArgument,
+	codes.PermissionDenied,
+	codes.Unavailable,
+	codes.OutOfRange,
+	codes.Unknown,
+	codes.FailedPrecondition,
+}
+
+func TestMetricsInterceptor_Err(t *testing.T) {
+	util.SetLoggerInstance(&zerolog.Logger{})
+	serverInfo := &grpc.UnaryServerInfo{FullMethod: "/package.service/method"}
+
+	for _, code := range testMetricsInterceptorErr {
+		interceptor := metricsInterceptor()
+
+		mockHandler := func(ctx context.Context, req any) (any, error) {
+			return nil, status.Error(code, "error")
+		}
+
+		_, err := interceptor(context.Background(), nil, serverInfo, mockHandler)
+
+		if grpcStatus, ok := status.FromError(err); grpcStatus.Code() != code || !ok {
+			t.Fatalf("Expected Status.Code to be %v, got %v", code, grpcStatus)
+		}
+	}
+}
+
+func TestMetricsInterceptor_Success(t *testing.T) {
+	serverInfo := &grpc.UnaryServerInfo{FullMethod: "/package.service/method"}
+
+	mockSearchHandler := func(ctx context.Context, req any) (any, error) {
+		return &pb.SearchResponse{}, nil
+	}
+
+	res, err := metricsInterceptor()(context.Background(), nil, serverInfo, mockSearchHandler)
+
+	grpcStatus, ok := status.FromError(err)
+	if !ok || !assert.Equal(t, &pb.SearchResponse{}, res) {
+		t.Fatalf("Expected Status.Code to be %v, got %v", codes.OK, grpcStatus)
 	}
 }

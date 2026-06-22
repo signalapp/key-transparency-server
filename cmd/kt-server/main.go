@@ -149,7 +149,9 @@ func main() {
 		ktQueryServer := grpc.NewServer(
 			grpc.ChainUnaryInterceptor(
 				validateAuthorizedHeadersInterceptor(config.KtQueryServiceConfig),
-				grpc_recovery.UnaryServerInterceptor(logPanicOpt)),
+				metricsInterceptor(),
+				grpc_recovery.UnaryServerInterceptor(logPanicOpt),
+			),
 		)
 		pb.RegisterKeyTransparencyQueryServiceServer(ktQueryServer, ktQueryHandler)
 
@@ -250,7 +252,7 @@ func main() {
 			// validateAuthorizedHeadersInterceptor, so order is important here.
 			validateAuthorizedHeadersInterceptor(ktServiceConfig),
 			storeAuditorNameInterceptor(config.KtServiceConfig),
-			grpcServiceNameMetricsInterceptor()))
+			metricsInterceptor()))
 		pb.RegisterKeyTransparencyAuditorServiceServer(ktServer, ktHandler)
 
 		util.Log().Infof("Starting kt server at: %v", ktServiceConfig.ServerAddr)

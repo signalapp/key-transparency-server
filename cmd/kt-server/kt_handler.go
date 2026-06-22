@@ -19,7 +19,7 @@ import (
 	"github.com/signalapp/keytransparency/cmd/internal/util"
 	"github.com/signalapp/keytransparency/cmd/kt-server/pb"
 	"github.com/signalapp/keytransparency/db"
-	"github.com/signalapp/keytransparency/tree/transparency"
+	"github.com/signalapp/keytransparency/tree"
 	tpb "github.com/signalapp/keytransparency/tree/transparency/pb"
 )
 
@@ -51,12 +51,7 @@ func (h *KtHandler) audit(ctx context.Context, req *pb.AuditRequest) (*pb.AuditR
 	}
 	updates, more, err := tree.Audit(req.Start, req.Limit)
 	if err != nil {
-		if errors.Is(err, transparency.ErrInvalidArgument) {
-			return nil, status.Error(codes.InvalidArgument, err.Error())
-		} else if errors.Is(err, transparency.ErrOutOfRange) {
-			return nil, status.Error(codes.OutOfRange, err.Error())
-		}
-		return nil, err
+		return nil, toGrpcError(err)
 	}
 	return &pb.AuditResponse{Updates: updates, More: more}, nil
 }
@@ -82,15 +77,17 @@ func (h *KtHandler) setAuditorHead(ctx context.Context, head *tpb.AuditorTreeHea
 
 	select {
 	case err := <-errorCh:
-		if errors.Is(err, transparency.ErrInvalidArgument) {
-			return nil, status.Error(codes.InvalidArgument, err.Error())
-		} else if _, isType := err.(*transparency.ErrAuditorSignatureVerificationFailed); isType {
-			util.Log().Errorf("failed to verify auditor tree head signature: %s", err.Error())
-			return nil, status.Error(codes.FailedPrecondition, err.Error())
-		} else if errors.Is(err, transparency.ErrFailedPrecondition) {
-			return nil, status.Error(codes.FailedPrecondition, err.Error())
-		} else if err != nil {
-			return nil, status.Error(codes.Unavailable, err.Error())
+		if err != nil {
+			if _, ok := errors.AsType[*tree.ErrAuditorSignatureVerificationFailed](err); ok {
+				util.Log().Errorf("failed to verify auditor tree head signature: %s", err.Error())
+			}
+			grpcErr := toGrpcError(err)
+			// Return Unavailable instead of Unknown for unexpected errors for backwards compatability
+			if s, _ := status.FromError(grpcErr); s.Code() == codes.Unknown {
+				util.Log().Errorf("unexpected error setting auditor tree head: %v", grpcErr)
+				return nil, status.Error(codes.Unavailable, grpcErr.Error())
+			}
+			return nil, grpcErr
 		}
 	case <-ctx.Done():
 		return nil, fmt.Errorf("waiting for auditor head insertion result timed out: %w", ctx.Err())

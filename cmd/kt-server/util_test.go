@@ -8,6 +8,7 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"testing"
 
 	"github.com/rs/zerolog"
@@ -21,6 +22,7 @@ import (
 	"github.com/signalapp/keytransparency/cmd/internal/util"
 	"github.com/signalapp/keytransparency/cmd/kt-server/pb"
 	"github.com/signalapp/keytransparency/cmd/shared"
+	commonerrors "github.com/signalapp/keytransparency/common-errors"
 )
 
 var (
@@ -38,27 +40,23 @@ func random(length int) []byte {
 }
 
 var testVerifyMappedValueParameters = []struct {
-	providedValue     []byte
-	expectedValue     []byte
-	expectedErrorType codes.Code
+	providedValue []byte
+	expectedValue []byte
+	checkErrFunc  func(error) bool
 }{
-	{validAci1, validAci1, codes.OK},
-	{validAciIdentityKey1, validAciIdentityKey1, codes.OK},
-	{validAci1, mismatchedAci, codes.PermissionDenied},
+	{validAci1, validAci1, func(err error) bool { return err == nil }},
+	{validAciIdentityKey1, validAciIdentityKey1, func(err error) bool { return err == nil }},
+	{validAci1, mismatchedAci, func(err error) bool {
+		var permissionDenied *commonerrors.ErrPermissionDenied
+		return errors.As(err, &permissionDenied)
+	}},
 }
 
 func TestVerifyMappedValueConstantTime(t *testing.T) {
 	for _, p := range testVerifyMappedValueParameters {
 		err := verifyMappedValueConstantTime(p.providedValue, p.expectedValue)
-		if (p.expectedErrorType != codes.OK) != (err != nil) {
-			t.Fatalf("Expected %v, got %v",
-				p.expectedErrorType, err)
-		}
-
-		if p.expectedErrorType != codes.OK {
-			if grpcError, ok := status.FromError(err); grpcError.Code() != p.expectedErrorType || !ok {
-				t.Fatalf("Expected error of type %v, got %v", p.expectedErrorType, grpcError)
-			}
+		if !p.checkErrFunc(err) {
+			t.Fatalf("unexpected error %v", err)
 		}
 	}
 }

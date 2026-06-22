@@ -20,7 +20,7 @@ import (
 	"github.com/signalapp/keytransparency/cmd/internal/util"
 	"github.com/signalapp/keytransparency/cmd/kt-server/pb"
 	"github.com/signalapp/keytransparency/db"
-	"github.com/signalapp/keytransparency/tree/transparency"
+	t "github.com/signalapp/keytransparency/tree"
 	tpb "github.com/signalapp/keytransparency/tree/transparency/pb"
 )
 
@@ -35,13 +35,14 @@ type KtUpdateHandler struct {
 func (h *KtUpdateHandler) Update(ctx context.Context, req *tpb.UpdateRequest) (*tpb.UpdateResponse, error) {
 	start := time.Now()
 	res, err := h.update(ctx, req, 5*time.Second)
-	labels := []metrics.Label{successLabel(err), grpcStatusLabel(err)}
+	grpcErr := toGrpcError(err)
+	labels := []metrics.Label{successLabel(grpcErr), grpcStatusLabel(grpcErr)}
 	metrics.IncrCounterWithLabels([]string{"update_requests"}, 1, labels)
 	metrics.MeasureSinceWithLabels([]string{"update_duration"}, start, labels)
-	if err, _ := status.FromError(err); err.Code() == codes.Unknown {
+	if err, _ := status.FromError(grpcErr); err.Code() == codes.Unknown {
 		util.Log().Errorf("Unexpected update error in key transparency service: %v", err.Err())
 	}
-	return res, err
+	return res, grpcErr
 }
 
 func (h *KtUpdateHandler) update(ctx context.Context, req *tpb.UpdateRequest, timeout time.Duration) (*tpb.UpdateResponse, error) {
@@ -65,7 +66,7 @@ func (h *KtUpdateHandler) update(ctx context.Context, req *tpb.UpdateRequest, ti
 	select {
 	case res := <-ch:
 		if res.err != nil {
-			if errors.Is(res.err, transparency.ErrDuplicateUpdate) {
+			if errors.Is(res.err, t.ErrDuplicateUpdate) {
 				searchKeyTypeLabel, err := GetSearchKeyTypeLabel(req.SearchKey)
 				if err != nil {
 					return nil, err

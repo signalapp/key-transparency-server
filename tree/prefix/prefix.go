@@ -16,11 +16,10 @@ import (
 	"math"
 	"runtime"
 
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/signalapp/keytransparency/db"
+	"github.com/signalapp/keytransparency/tree"
 	"github.com/signalapp/keytransparency/tree/prefix/pb"
 )
 
@@ -70,7 +69,7 @@ func NewTree(aesKey []byte, tx db.PrefixStore) *Tree {
 // BatchSearch returns an unexecuted search structure.
 func (t *Tree) BatchSearch(treeSize uint64, index []byte) (*Search, error) {
 	if treeSize == 0 {
-		return nil, errors.New("tree is empty")
+		return nil, tree.ErrEmptyTree
 	} else if len(index) != IndexLength {
 		return nil, fmt.Errorf("index length must be %v bytes", IndexLength)
 	}
@@ -88,7 +87,7 @@ func (t *Tree) BatchExec(searches []*Search) ([]*SearchResult, error) {
 	for i, res := range results {
 		entry, ok := res.(*cachedLogEntry)
 		if !ok {
-			return nil, status.Error(codes.NotFound, "failed to find index")
+			return nil, tree.ErrNotFound
 		}
 		out = append(out, &SearchResult{
 			Proof:   entry.getCopath(),

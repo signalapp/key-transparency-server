@@ -6,6 +6,8 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -15,7 +17,9 @@ import (
 	"github.com/signalapp/keytransparency/cmd/internal/config"
 	"github.com/signalapp/keytransparency/cmd/kt-server/pb"
 	"github.com/signalapp/keytransparency/cmd/shared"
+	commonerrors "github.com/signalapp/keytransparency/common-errors"
 	"github.com/signalapp/keytransparency/db"
+	"github.com/signalapp/keytransparency/tree"
 	tpb "github.com/signalapp/keytransparency/tree/transparency/pb"
 )
 
@@ -38,7 +42,8 @@ func TestDistinguished_NilRequest(t *testing.T) {
 	accountDb := db.MockAccountDB{}
 	h := KtQueryHandler{config: mockConfig.APIConfig, tx: mockTransparencyStore, accountDB: &accountDb}
 
-	_, err := h.distinguished(nil)
+	_, err := h.Distinguished(context.Background(), nil)
+
 	if grpcError, ok := status.FromError(err); grpcError.Code() != codes.InvalidArgument || !ok {
 		t.Fatalf("Expected %v, got %v",
 			codes.InvalidArgument, err)
@@ -84,12 +89,11 @@ var testInvalidSearchRequestParameters = []struct {
 func TestSearch_InvalidArgument(t *testing.T) {
 	mockConfig, _ := config.Read(mockConfigFile)
 	mockTransparencyStore := db.NewMemoryTransparencyStore()
-	tree, _ := mockConfig.APIConfig.NewTree(mockTransparencyStore)
 	accountDb := db.MockAccountDB{}
 	h := KtQueryHandler{config: mockConfig.APIConfig, tx: mockTransparencyStore, accountDB: &accountDb}
 
 	for _, p := range testInvalidSearchRequestParameters {
-		_, err := h.search(p.searchRequest, tree)
+		_, err := h.Search(context.Background(), p.searchRequest)
 		if grpcError, ok := status.FromError(err); grpcError.Code() != codes.InvalidArgument || !ok {
 			t.Fatalf("Expected %v, got %v",
 				codes.InvalidArgument, err)
@@ -121,9 +125,9 @@ func TestSearch_AciNotFound(t *testing.T) {
 		AciIdentityKey: validAciIdentityKey1,
 		Consistency:    &tpb.Consistency{},
 	}, tree)
-	if grpcError, ok := status.FromError(err); grpcError.Code() != codes.PermissionDenied || !ok {
-		t.Fatalf("Expected %v, got %v",
-			codes.PermissionDenied, err)
+
+	if _, ok := errors.AsType[*commonerrors.ErrPermissionDenied](err); !ok {
+		t.Fatalf("Expected ErrPermissionDenied, got %v", err)
 	} else if resp != nil {
 		t.Fatalf("Expected no search response")
 	}
@@ -155,9 +159,8 @@ func TestSearch_AciPermissionDenied(t *testing.T) {
 	}
 
 	resp, err := h.search(searchReq, tree)
-	if grpcError, ok := status.FromError(err); grpcError.Code() != codes.PermissionDenied || !ok {
-		t.Fatalf("Expected %v, got %v",
-			codes.PermissionDenied, err)
+	if _, ok := errors.AsType[*commonerrors.ErrPermissionDenied](err); !ok {
+		t.Fatalf("Expected ErrPermissionDenied, got %v", err)
 	} else if resp != nil {
 		t.Fatalf("Expected no search response")
 	}
@@ -407,7 +410,7 @@ func TestMonitor_InvalidRequests(t *testing.T) {
 	h := KtQueryHandler{config: mockConfig.APIConfig, tx: mockTransparencyStore, accountDB: &accountDb}
 
 	for _, p := range testInvalidMonitorParameters {
-		_, err := h.monitor(p.monitorRequest)
+		_, err := h.Monitor(context.Background(), p.monitorRequest)
 
 		if p.expectedError != codes.OK {
 			if grpcError, ok := status.FromError(err); grpcError.Code() != p.expectedError || !ok {
@@ -602,44 +605,41 @@ var testVerifyPhoneNumberSearchParameters = []struct {
 	expectedValue         []byte
 	unidentifiedAccessKey []byte
 	account               *db.Account
-	expectedErrorType     codes.Code
+	checkErrFunc          func(error) bool
 }{
 	// Discoverable; unidentified access key matches; provided value matches; no error
 	{validAci1, validAci1, unidentifiedAccessKey, &db.Account{
 		UnidentifiedAccessKey:     unidentifiedAccessKey,
 		DiscoverableByPhoneNumber: true,
-	}, codes.OK},
+	}, func(err error) bool { return err == nil }},
 	// Account does not exist; expect error
-	{validAci1, validAci1, unidentifiedAccessKey, nil, codes.NotFound},
+	{validAci1, validAci1, unidentifiedAccessKey, nil,
+		func(err error) bool { return errors.Is(err, tree.ErrNotFound) }},
 	// User not discoverable by phone number; expect error
 	{validAci1, validAci1, unidentifiedAccessKey, &db.Account{
 		UnidentifiedAccessKey:     unidentifiedAccessKey,
 		DiscoverableByPhoneNumber: false,
-	}, codes.NotFound},
+	}, func(err error) bool { return errors.Is(err, tree.ErrNotFound) }},
 	// Unidentified access key does not match; expect error
 	{validAci1, validAci1, unidentifiedAccessKey, &db.Account{
 		UnidentifiedAccessKey:     mismatchedUnidentifiedAccessKey,
 		DiscoverableByPhoneNumber: true,
-	}, codes.NotFound},
+	}, func(err error) bool { return errors.Is(err, tree.ErrNotFound) }},
 	// Provided and expected mapped values do not match; expect error
 	{validAci1, mismatchedAci, unidentifiedAccessKey, &db.Account{
 		UnidentifiedAccessKey:     unidentifiedAccessKey,
 		DiscoverableByPhoneNumber: true,
-	}, codes.PermissionDenied},
+	}, func(err error) bool {
+		var permissionDenied *commonerrors.ErrPermissionDenied
+		return errors.As(err, &permissionDenied)
+	}},
 }
 
 func TestVerifyPhoneNumberSearchConstantTime(t *testing.T) {
 	for _, p := range testVerifyPhoneNumberSearchParameters {
 		err := verifyPhoneNumberSearchConstantTime(p.providedValue, p.expectedValue, p.unidentifiedAccessKey, p.account)
-		if (p.expectedErrorType != codes.OK) != (err != nil) {
-			t.Fatalf("Expected %v, got %v",
-				p.expectedErrorType, err)
-		}
-
-		if p.expectedErrorType != codes.OK {
-			if grpcError, ok := status.FromError(err); grpcError.Code() != p.expectedErrorType || !ok {
-				t.Fatalf("Expected error of type %v, got %v", p.expectedErrorType, grpcError)
-			}
+		if !p.checkErrFunc(err) {
+			t.Fatalf("unexpected error %v", err)
 		}
 	}
 }

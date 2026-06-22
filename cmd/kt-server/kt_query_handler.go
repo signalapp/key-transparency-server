@@ -8,18 +8,19 @@ package main
 import (
 	"context"
 	"crypto/subtle"
+	"errors"
 	"math/rand"
 	"strings"
 	"time"
 
 	"github.com/hashicorp/go-metrics"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	"github.com/signalapp/keytransparency/cmd/internal/config"
 	"github.com/signalapp/keytransparency/cmd/kt-server/pb"
 	"github.com/signalapp/keytransparency/cmd/shared"
+	commonerrors "github.com/signalapp/keytransparency/common-errors"
 	"github.com/signalapp/keytransparency/db"
+	tr "github.com/signalapp/keytransparency/tree"
 	"github.com/signalapp/keytransparency/tree/transparency"
 	tpb "github.com/signalapp/keytransparency/tree/transparency/pb"
 )
@@ -33,12 +34,14 @@ type KtQueryHandler struct {
 }
 
 func (h *KtQueryHandler) Distinguished(ctx context.Context, req *pb.DistinguishedRequest) (*pb.DistinguishedResponse, error) {
-	return h.distinguished(req)
+	res, err := h.distinguished(req)
+	grpcErr := toGrpcError(err)
+	return res, grpcErr
 }
 
 func (h *KtQueryHandler) distinguished(req *pb.DistinguishedRequest) (*pb.DistinguishedResponse, error) {
 	if req == nil {
-		return nil, status.Error(codes.InvalidArgument, "invalid request")
+		return nil, &commonerrors.ErrInvalidArgument{Field: "request", Message: "request cannot be nil"}
 	}
 
 	tree, err := h.config.NewTree(h.tx)
@@ -67,15 +70,17 @@ func (h *KtQueryHandler) Search(ctx context.Context, req *pb.SearchRequest) (*pb
 	start := time.Now()
 	tree, err := h.config.NewTree(h.tx)
 	if err != nil {
-		return nil, err
+		return nil, toGrpcError(err)
 	}
 	res, err := h.search(req, tree)
-	labels := []metrics.Label{successLabel(err), grpcStatusLabel(err)}
+	grpcErr := toGrpcError(err)
+
+	labels := []metrics.Label{successLabel(grpcErr), grpcStatusLabel(grpcErr)}
 	metrics.MeasureSinceWithLabels([]string{"search_duration"}, start, labels)
 
 	// Achieve some minimum delay with jitter on the request to avoid a timing side-channel.
 	addRandomDelay(start, time.Now(), h.config.MinimumSearchDelay, h.config.JitterPercent, "search")
-	return res, err
+	return res, grpcErr
 }
 
 // Only ACI searches result in a `NotFound` or `PermissionDenied` response.
@@ -111,28 +116,28 @@ func (h *KtQueryHandler) search(req *pb.SearchRequest, tree *transparency.Tree) 
 
 func validateRequestParameters(req *pb.SearchRequest) error {
 	if req == nil {
-		return status.Error(codes.InvalidArgument, "invalid request")
+		return &commonerrors.ErrInvalidArgument{Field: "request", Message: "request cannot be nil"}
 	}
 	if len(req.Aci) != 16 {
-		return status.Error(codes.InvalidArgument, "invalid ACI")
+		return &commonerrors.ErrInvalidArgument{Field: "Aci", Message: "ACI must be 16 bytes"}
 	}
 	if len(req.AciIdentityKey) == 0 {
-		return status.Error(codes.InvalidArgument, "must provide ACI identity key")
+		return &commonerrors.ErrInvalidArgument{Field: "AciIdentityKey", Message: "must provide ACI identity key"}
 	}
 	if req.E164SearchRequest != nil {
 		if len(req.E164SearchRequest.UnidentifiedAccessKey) == 0 {
-			return status.Error(codes.InvalidArgument, "must provide unidentified access key for a phone number search")
+			return &commonerrors.ErrInvalidArgument{Field: "E164SearchRequest.UnidentifiedAccessKey", Message: "must provide unidentified access key for a phone number search"}
 		}
 
 		if !isPossiblePhoneNumber(req.E164SearchRequest.GetE164()) {
-			return status.Error(codes.InvalidArgument, "invalid phone number")
+			return &commonerrors.ErrInvalidArgument{Field: "E164SearchRequest.E164", Message: "invalid phone number"}
 		}
 	}
 	if len(req.UsernameHash) != 0 && len(req.UsernameHash) != 32 {
-		return status.Error(codes.InvalidArgument, "invalid username hash")
+		return &commonerrors.ErrInvalidArgument{Field: "UsernameHash", Message: "username hash must be empty or 32 bytes"}
 	}
 	if req.Consistency == nil {
-		return status.Error(codes.InvalidArgument, "consistency cannot be nil")
+		return &commonerrors.ErrInvalidArgument{Field: "Consistency", Message: "consistency cannot be nil"}
 	}
 	return nil
 }
@@ -149,17 +154,18 @@ func aciSearch(req *pb.SearchRequest, tree *transparency.Tree) (*tpb.FullTreeHea
 		SearchKey:   append([]byte{shared.AciPrefix}, req.Aci...),
 		Consistency: consistency,
 	})
-	metrics.IncrCounterWithLabels([]string{"search_requests", "aci"}, 1, []metrics.Label{grpcStatusLabel(err)})
+
+	metrics.IncrCounterWithLabels([]string{"search_requests", "aci"}, 1, []metrics.Label{grpcStatusLabel(toGrpcError(err))})
 
 	if err != nil {
 		// There's no use case for distinguishing "not found" vs "permission denied"
 		// and consolidating prevents information leakage.
-		if grpcError, _ := status.FromError(err); grpcError.Code() == codes.NotFound {
-			err = status.Error(codes.PermissionDenied, "provided value does not match expected value")
+		if errors.Is(err, tr.ErrNotFound) {
+			err = &commonerrors.ErrPermissionDenied{Message: "provided value does not match expected value"}
 		}
 		return nil, nil, err
 	} else if len(aciResponse.Value.Value) < 2 || aciResponse.Value.Value[0] != 0 {
-		return nil, nil, status.Error(codes.Internal, "unexpected response value")
+		return nil, nil, errInternal
 	}
 
 	err = verifyMappedValueConstantTime(req.AciIdentityKey, aciResponse.Value.Value[1:])
@@ -179,17 +185,18 @@ func usernameHashSearch(req *pb.SearchRequest, tree *transparency.Tree) (*pb.Con
 		SearchKey:   append([]byte{shared.UsernameHashPrefix}, req.UsernameHash...),
 		Consistency: &tpb.Consistency{},
 	})
-	metrics.IncrCounterWithLabels([]string{"search_requests", "username_hash"}, 1, []metrics.Label{grpcStatusLabel(responseErr)})
+
+	metrics.IncrCounterWithLabels([]string{"search_requests", "username_hash"}, 1, []metrics.Label{grpcStatusLabel(toGrpcError(responseErr))})
 
 	if responseErr != nil {
 		// A non-nil err should be returned except in the case where it's "not found".
 		// In that case, we don't respond to the search but still allow a phone number search to continue.
-		if grpcError, _ := status.FromError(responseErr); grpcError.Code() == codes.NotFound {
+		if errors.Is(responseErr, tr.ErrNotFound) {
 			return nil, nil
 		}
 		return nil, responseErr
 	} else if len(usernameHashResponse.Value.Value) < 2 || usernameHashResponse.Value.Value[0] != 0 {
-		return nil, status.Error(codes.Internal, "unexpected response value")
+		return nil, errInternal
 	} else {
 		err := verifyMappedValueConstantTime(req.Aci, usernameHashResponse.Value.Value[1:])
 		if err != nil {
@@ -219,18 +226,19 @@ func (h *KtQueryHandler) phoneNumberSearch(req *pb.SearchRequest, tree *transpar
 		SearchKey:   append([]byte{shared.NumberPrefix}, []byte(req.E164SearchRequest.GetE164())...),
 		Consistency: &tpb.Consistency{},
 	})
-	metrics.IncrCounterWithLabels([]string{"search_requests", "e164"}, 1, []metrics.Label{grpcStatusLabel(responseErr)})
+
+	metrics.IncrCounterWithLabels([]string{"search_requests", "e164"}, 1, []metrics.Label{grpcStatusLabel(toGrpcError(responseErr))})
 
 	var valueForComparison []byte
 	if responseErr != nil {
-		if grpcError, _ := status.FromError(responseErr); grpcError.Code() == codes.NotFound {
+		if errors.Is(responseErr, tr.ErrNotFound) {
 			// Set this value to something that will always fail comparison
 			valueForComparison = createDistinctValue(req.Aci)
 		} else {
 			return nil, responseErr
 		}
 	} else if len(phoneNumberResponse.Value.Value) < 2 || phoneNumberResponse.Value.Value[0] != 0 {
-		return nil, status.Error(codes.Internal, "unexpected response value")
+		return nil, errInternal
 	} else {
 		valueForComparison = phoneNumberResponse.Value.Value[1:]
 	}
@@ -246,16 +254,17 @@ func (h *KtQueryHandler) phoneNumberSearch(req *pb.SearchRequest, tree *transpar
 func (h *KtQueryHandler) Monitor(ctx context.Context, req *pb.MonitorRequest) (*pb.MonitorResponse, error) {
 	start := time.Now()
 	res, err := h.monitor(req)
-	labels := []metrics.Label{successLabel(err), grpcStatusLabel(err)}
+	grpcErr := toGrpcError(err)
+	labels := []metrics.Label{successLabel(grpcErr), grpcStatusLabel(grpcErr)}
 	metrics.MeasureSinceWithLabels([]string{"monitor_duration"}, start, labels)
 	// Achieve some minimum delay with jitter on the request to avoid a timing side-channel.
 	addRandomDelay(start, time.Now(), h.config.MinimumMonitorDelay, h.config.JitterPercent, "monitor")
-	return res, err
+	return res, grpcErr
 }
 
 func (h *KtQueryHandler) monitor(req *pb.MonitorRequest) (*pb.MonitorResponse, error) {
 	if req == nil {
-		return nil, status.Error(codes.InvalidArgument, "invalid request")
+		return nil, &commonerrors.ErrInvalidArgument{Field: "request", Message: "request cannot be nil"}
 	}
 
 	tree, err := h.config.NewTree(h.tx)
@@ -354,7 +363,7 @@ func verifyPhoneNumberSearchConstantTime(mappedValue, expectedValue, reqUnidenti
 
 	if (discoverable & unidentifiedAccessKeysEqual) == 0 {
 		// We want to avoid leaking data about the existence of an account with a given phone number
-		return status.Error(codes.NotFound, "user not found")
+		return tr.ErrNotFound
 	}
 
 	return verifyMappedValueConstantTime(mappedValue, expectedValue)

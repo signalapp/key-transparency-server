@@ -7,14 +7,14 @@ package test
 
 import (
 	"bytes"
+	"errors"
 	mrand "math/rand"
 	"testing"
 	"time"
 
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-
+	commonerrors "github.com/signalapp/keytransparency/common-errors"
 	"github.com/signalapp/keytransparency/db"
+	tr "github.com/signalapp/keytransparency/tree"
 	"github.com/signalapp/keytransparency/tree/transparency"
 	"github.com/signalapp/keytransparency/tree/transparency/math"
 	"github.com/signalapp/keytransparency/tree/transparency/pb"
@@ -316,20 +316,20 @@ func TestSearch_EmptyTree_ProofGeneration(t *testing.T) {
 
 	_, err = tree.Search(req)
 
-	if gprcError, ok := status.FromError(err); !ok || gprcError.Code() != codes.InvalidArgument {
-		t.Fatal("Expected `invalid argument` error, got ", err)
+	if _, ok := errors.AsType[*commonerrors.ErrInvalidArgument](err); !ok {
+		t.Fatal("Expected invalid argument error, got ", err)
 	}
 
 	req.Consistency = &pb.Consistency{Distinguished: &emptyTreeSize}
 	_, err = tree.Search(req)
-	if gprcError, ok := status.FromError(err); !ok || gprcError.Code() != codes.InvalidArgument {
-		t.Fatal("Expected `invalid argument` error, got ", err)
+	if _, ok := errors.AsType[*commonerrors.ErrInvalidArgument](err); !ok {
+		t.Fatal("Expected invalid argument error, got ", err)
 	}
 
 	req.Consistency = &pb.Consistency{Last: &emptyTreeSize, Distinguished: &emptyTreeSize}
 	_, err = tree.Search(req)
-	if gprcError, ok := status.FromError(err); !ok || gprcError.Code() != codes.InvalidArgument {
-		t.Fatal("Expected `invalid argument` error, got ", err)
+	if _, ok := errors.AsType[*commonerrors.ErrInvalidArgument](err); !ok {
+		t.Fatal("Expected invalid argument error, got ", err)
 	}
 }
 
@@ -403,20 +403,20 @@ func TestMonitor(t *testing.T) {
 	emptyTreeSize := uint64(0)
 	req.Consistency = &pb.Consistency{Last: &emptyTreeSize}
 	_, err = tree.Monitor(req)
-	if gprcError, ok := status.FromError(err); !ok || gprcError.Code() != codes.InvalidArgument {
-		t.Fatal("Expected `invalid argument` error, got ", err)
+	if _, ok := errors.AsType[*commonerrors.ErrInvalidArgument](err); !ok {
+		t.Fatal("Expected invalid argument error, got ", err)
 	}
 
 	req.Consistency = &pb.Consistency{Distinguished: &emptyTreeSize}
 	_, err = tree.Monitor(req)
-	if gprcError, ok := status.FromError(err); !ok || gprcError.Code() != codes.InvalidArgument {
-		t.Fatal("Expected `invalid argument` error, got ", err)
+	if _, ok := errors.AsType[*commonerrors.ErrInvalidArgument](err); !ok {
+		t.Fatal("Expected invalid argument error, got ", err)
 	}
 
 	req.Consistency = &pb.Consistency{Last: &emptyTreeSize, Distinguished: &emptyTreeSize}
 	_, err = tree.Monitor(req)
-	if gprcError, ok := status.FromError(err); !ok || gprcError.Code() != codes.InvalidArgument {
-		t.Fatal("Expected `invalid argument` error, got ", err)
+	if _, ok := errors.AsType[*commonerrors.ErrInvalidArgument](err); !ok {
+		t.Fatal("Expected invalid argument error, got ", err)
 	}
 }
 
@@ -588,7 +588,7 @@ func TestUpdateRejectsDuplicates(t *testing.T) {
 		}
 		for i, res := range results {
 			_, err := tree.PostUpdate(res)
-			if dup[i] && err != transparency.ErrDuplicateUpdate {
+			if dup[i] && !errors.Is(err, tr.ErrDuplicateUpdate) {
 				t.Fatalf("unexpected error: %v", err)
 			} else if !dup[i] && err != nil {
 				t.Fatalf("unexpected error: %v", err)

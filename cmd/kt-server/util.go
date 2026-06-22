@@ -22,6 +22,7 @@ import (
 	"github.com/signalapp/keytransparency/cmd/internal/config"
 	"github.com/signalapp/keytransparency/cmd/internal/util"
 	"github.com/signalapp/keytransparency/cmd/shared"
+	commonerrors "github.com/signalapp/keytransparency/common-errors"
 	"github.com/signalapp/keytransparency/tree/transparency/pb"
 )
 
@@ -35,7 +36,7 @@ const (
 
 func verifyMappedValueConstantTime(mappedValue, expectedValue []byte) error {
 	if 1 != subtle.ConstantTimeCompare(expectedValue, mappedValue) {
-		return status.Error(codes.PermissionDenied, "provided value does not match expected value")
+		return &commonerrors.ErrPermissionDenied{Message: "provided value does not match expected value"}
 	}
 	return nil
 }

@@ -18,6 +18,7 @@ import (
 	"github.com/signalapp/keytransparency/crypto/commitments"
 	edvrf "github.com/signalapp/keytransparency/crypto/vrf/ed25519"
 	"github.com/signalapp/keytransparency/db"
+	"github.com/signalapp/keytransparency/tree"
 	"github.com/signalapp/keytransparency/tree/transparency/pb"
 )
 
@@ -173,10 +174,10 @@ func verifyAuditorTreeHead(config *PublicConfig, head *pb.FullAuditorTreeHead, r
 	if err != nil {
 		return err
 	} else if ok := ed25519.Verify(auditorPublicKey, raw, head.TreeHead.Signature); !ok {
-		return &ErrAuditorSignatureVerificationFailed{
-			dataToBeSigned:           raw,
-			auditorPublicKey:         auditorPublicKey,
-			auditorProvidedSignature: head.TreeHead.Signature,
+		return &tree.ErrAuditorSignatureVerificationFailed{
+			DataToBeSigned:           raw,
+			AuditorPublicKey:         auditorPublicKey,
+			AuditorProvidedSignature: head.TreeHead.Signature,
 		}
 	}
 	return nil

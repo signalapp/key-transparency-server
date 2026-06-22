@@ -21,13 +21,13 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-metrics"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
+	commonerrors "github.com/signalapp/keytransparency/common-errors"
 	"github.com/signalapp/keytransparency/crypto/commitments"
 	"github.com/signalapp/keytransparency/crypto/vrf"
 	edvrf "github.com/signalapp/keytransparency/crypto/vrf/ed25519"
 	"github.com/signalapp/keytransparency/db"
+	"github.com/signalapp/keytransparency/tree"
 	"github.com/signalapp/keytransparency/tree/log"
 	"github.com/signalapp/keytransparency/tree/prefix"
 	prefixpb "github.com/signalapp/keytransparency/tree/prefix/pb"
@@ -43,24 +43,6 @@ const (
 	ThirdPartyManagement
 	ThirdPartyAuditing
 )
-
-var (
-	ErrInvalidArgument    = errors.New("invalid request argument")
-	ErrOutOfRange         = errors.New("querying past end of log")
-	ErrFailedPrecondition = errors.New("failed precondition")
-	ErrDuplicateUpdate    = errors.New("duplicate update")
-)
-
-type ErrAuditorSignatureVerificationFailed struct {
-	dataToBeSigned           []byte
-	auditorPublicKey         ed25519.PublicKey
-	auditorProvidedSignature []byte
-}
-
-func (e *ErrAuditorSignatureVerificationFailed) Error() string {
-	return fmt.Sprintf("auditor signature verification failed.\ndataToBeSigned: %x\n, auditorPublicKey:%x\n, auditorSig: %x",
-		e.dataToBeSigned, e.auditorPublicKey, e.auditorProvidedSignature)
-}
 
 // PrivateConfig wraps all of the cryptographic keys needed to operate a
 // transparency tree.
@@ -143,14 +125,14 @@ func (t *Tree) fullTreeHead(req *pb.Consistency) (*pb.FullTreeHead, error) {
 		distinguished [][]byte
 	)
 	if req == nil {
-		return nil, status.Error(codes.InvalidArgument, "consistency cannot be nil")
+		return nil, &commonerrors.ErrInvalidArgument{Field: "consistency", Message: "consistency cannot be nil"}
 	}
 	if req.Last != nil && *req.Last != t.latest.TreeSize {
 		if *req.Last > t.latest.TreeSize {
-			return nil, status.Error(codes.InvalidArgument, "last observed non-distinguished tree size is greater than current tree size")
+			return nil, &commonerrors.ErrInvalidArgument{Field: "consistency.last", Message: "last observed non-distinguished tree size is greater than current tree size"}
 		}
 		if *req.Last == 0 {
-			return nil, status.Error(codes.InvalidArgument, "last observed non-distinguished tree size must be greater than zero")
+			return nil, &commonerrors.ErrInvalidArgument{Field: "consistency.last", Message: "last observed non-distinguished tree size must be greater than zero"}
 		}
 		temp, err := t.logTree.GetConsistencyProof(*req.Last, t.latest.TreeSize)
 		if err != nil {
@@ -160,10 +142,10 @@ func (t *Tree) fullTreeHead(req *pb.Consistency) (*pb.FullTreeHead, error) {
 	}
 	if req.Distinguished != nil && *req.Distinguished != t.latest.TreeSize {
 		if *req.Distinguished > t.latest.TreeSize {
-			return nil, status.Error(codes.InvalidArgument, "last observed distinguished tree size is greater than current tree size")
+			return nil, &commonerrors.ErrInvalidArgument{Field: "consistency.distinguished", Message: "last observed distinguished tree size is greater than current tree size"}
 		}
 		if *req.Distinguished == 0 {
-			return nil, status.Error(codes.InvalidArgument, "last observed distinguished tree size must be greater than zero")
+			return nil, &commonerrors.ErrInvalidArgument{Field: "consistency.distinguished", Message: "last observed distinguished tree size must be greater than zero"}
 		}
 		temp, err := t.logTree.GetConsistencyProof(*req.Distinguished, t.latest.TreeSize)
 		if err != nil {
@@ -178,7 +160,7 @@ func (t *Tree) fullTreeHead(req *pb.Consistency) (*pb.FullTreeHead, error) {
 		for auditorName, auditorTreeHead := range t.auditors {
 			auditorPublicKey := t.config.AuditorKeys[auditorName]
 			if len(auditorPublicKey) == 0 {
-				return nil, status.Error(codes.FailedPrecondition, fmt.Sprintf("no auditor public key for auditor %s", auditorName))
+				return nil, &tree.ErrInvalidTreeConfiguration{Field: "auditor public keys", Message: fmt.Sprintf("no auditor public key for auditor %s", auditorName)}
 			}
 			pbAuditorTreeHead := &pb.FullAuditorTreeHead{
 				TreeHead: &pb.AuditorTreeHead{
@@ -481,7 +463,7 @@ func (t *Tree) BatchUpdate(states []*PreUpdateState) ([]*PostUpdateState, error)
 		}
 		prev, ok := lastUpdate[state.Index]
 		if ok && bytes.Equal(states[prev].Value, state.Value) {
-			out[i] = &PostUpdateState{err: ErrDuplicateUpdate}
+			out[i] = &PostUpdateState{err: tree.ErrDuplicateUpdate}
 			continue
 		}
 		lastUpdate[state.Index] = i
@@ -512,7 +494,7 @@ func (t *Tree) BatchUpdate(states []*PreUpdateState) ([]*PostUpdateState, error)
 		prevVal, ok := logEntryToVal[pos]
 		if ok {
 			if bytes.Equal(states[statesPos[i]].Value, prevVal) {
-				out[statesPos[i]] = &PostUpdateState{err: ErrDuplicateUpdate}
+				out[statesPos[i]] = &PostUpdateState{err: tree.ErrDuplicateUpdate}
 			}
 			continue
 		}
@@ -523,7 +505,7 @@ func (t *Tree) BatchUpdate(states []*PreUpdateState) ([]*PostUpdateState, error)
 		if err != nil {
 			return nil, err
 		} else if bytes.Equal(states[statesPos[i]].Value, val) {
-			out[statesPos[i]] = &PostUpdateState{err: ErrDuplicateUpdate}
+			out[statesPos[i]] = &PostUpdateState{err: tree.ErrDuplicateUpdate}
 		}
 	}
 
@@ -779,21 +761,21 @@ func (t *Tree) Monitor(req *pb.MonitorRequest) (*pb.MonitorResponse, error) {
 func (t *Tree) verifyMonitorKey(vrfOutput map[string][32]byte, key *pb.MonitorKey) (*prefix.Search, error) {
 	// Check if this key is a duplicate of a previous one.
 	if _, ok := vrfOutput[string(key.SearchKey)]; ok {
-		return nil, status.Error(codes.InvalidArgument, "cannot monitor duplicate keys")
+		return nil, &commonerrors.ErrInvalidArgument{Field: "key.SearchKey", Message: "cannot monitor duplicate keys"}
 	}
 
 	// Verify the commitment index matches
 	if 32 != len(key.CommitmentIndex) {
-		return nil, status.Error(codes.InvalidArgument, "invalid commitment index")
+		return nil, &commonerrors.ErrInvalidArgument{Field: "key.CommitmentIndex", Message: "commitment index must be 32 bytes"}
 	}
 	index, _ := t.config.VrfKey.ECVRFProve(key.SearchKey)
 	if 1 != subtle.ConstantTimeCompare(index[:], key.CommitmentIndex) {
-		return nil, status.Error(codes.PermissionDenied, "commitment index does not match")
+		return nil, &commonerrors.ErrPermissionDenied{Message: "commitment index does not match"}
 	}
 	vrfOutput[string(key.SearchKey)] = index
 
 	if key.EntryPosition >= t.latest.TreeSize {
-		return nil, status.Error(codes.InvalidArgument, "monitoring request is malformed: entry is past end of tree")
+		return nil, &commonerrors.ErrInvalidArgument{Field: "key.EntryPosition", Message: "monitoring request is malformed: entry is past end of tree"}
 	}
 	// Note: The spec also says to check if any entries are less than the
 	// first occurrence of the key in the log. If this happens, the batch
@@ -818,7 +800,7 @@ func (t *Tree) finishMonitoring(index [32]byte, key *pb.MonitorKey, res *prefix.
 	if key.EntryPosition != res.LatestUpdatePosition {
 		path := math.MonitoringPath(res.LatestUpdatePosition, res.FirstUpdatePosition, t.latest.TreeSize)
 		if ok := slices.Contains(path, key.EntryPosition); !ok {
-			return nil, nil, status.Error(codes.InvalidArgument, "monitoring request is malformed: entry not on monitoring path")
+			return nil, nil, &commonerrors.ErrInvalidArgument{Field: "key.EntryPosition", Message: "monitoring request is malformed: entry not on monitoring path"}
 		}
 	}
 
@@ -843,11 +825,11 @@ func (t *Tree) finishMonitoring(index [32]byte, key *pb.MonitorKey, res *prefix.
 // provided to a third-party auditor.
 func (t *Tree) Audit(start, limit uint64) ([]*pb.AuditorUpdate, bool, error) {
 	if start > t.latest.TreeSize {
-		return nil, false, fmt.Errorf("%w: auditing can not start past end of tree", ErrOutOfRange)
+		return nil, false, tree.ErrOutOfRange
 	} else if start == t.latest.TreeSize {
 		return nil, false, nil
 	} else if limit > 1000 {
-		return nil, false, fmt.Errorf("%w: max limit of 1000 entries per audit request", ErrInvalidArgument)
+		return nil, false, &commonerrors.ErrInvalidArgument{Field: "limit", Message: "max limit of 1000 entries per audit request"}
 	}
 	end := start + limit
 	if end > t.latest.TreeSize {
@@ -936,28 +918,28 @@ func simpleCopath(copath []*prefixpb.ParentNode) [][]byte {
 // auditing) submits a new version of its tree head.
 func (t *Tree) SetAuditorHead(head *pb.AuditorTreeHead, auditorName string) error {
 	if t.config.Mode != ThirdPartyAuditing {
-		return fmt.Errorf("%w: tree is not in third-party auditing mode", ErrFailedPrecondition)
+		return &tree.ErrInvalidTreeConfiguration{Field: "tree mode", Message: "tree is not in third-party auditing mode"}
 	} else if head == nil {
-		return fmt.Errorf("%w: auditor tree head may not be nil", ErrInvalidArgument)
+		return &commonerrors.ErrInvalidArgument{Field: "request", Message: "auditor tree head may not be nil"}
 	}
 	// Note: The below code mirrors the relevant section of verifyFullTreeHead.
 
 	// Verify tree size.
 	if head.TreeSize > t.latest.TreeSize {
-		return fmt.Errorf("%w: auditor tree head may not be further along than service tree head", ErrInvalidArgument)
+		return &commonerrors.ErrInvalidArgument{Field: "TreeSize", Message: "auditor tree head may not be further along than service tree head"}
 	} else if t.latest.TreeSize-head.TreeSize > entriesMaxBehind {
-		return fmt.Errorf("%w: auditor tree head is too far behind service tree head", ErrInvalidArgument)
+		return &commonerrors.ErrInvalidArgument{Field: "TreeSize", Message: "auditor tree head is too far behind service tree head"}
 	} else if t.auditors[auditorName] != nil && head.TreeSize < t.auditors[auditorName].TreeSize {
-		return fmt.Errorf("%w: auditor tree head can not be less than before", ErrInvalidArgument)
+		return &commonerrors.ErrInvalidArgument{Field: "TreeSize", Message: "auditor tree head can not be less than before"}
 	}
 	// Verify timestamp.
 	now, then := time.Now().UnixMilli(), head.Timestamp
 	if now > then && now-then > timeAuditorMaxBehind.Milliseconds() {
-		return fmt.Errorf("%w: auditor timestamp is too far behind current time", ErrInvalidArgument)
+		return &commonerrors.ErrInvalidArgument{Field: "Timestamp", Message: "auditor timestamp is too far behind current time"}
 	} else if now < then && then-now > timeMaxAhead.Milliseconds() {
-		return fmt.Errorf("%w: auditor timestamp is too far ahead of current time", ErrInvalidArgument)
+		return &commonerrors.ErrInvalidArgument{Field: "Timestamp", Message: "auditor timestamp is too far ahead of current time"}
 	} else if t.auditors[auditorName] != nil && head.Timestamp < t.auditors[auditorName].Timestamp {
-		return fmt.Errorf("%w: auditor timestamp can not be less than before", ErrInvalidArgument)
+		return &commonerrors.ErrInvalidArgument{Field: "Timestamp", Message: "auditor timestamp can not be less than before"}
 	}
 
 	// Verify signature
@@ -967,7 +949,7 @@ func (t *Tree) SetAuditorHead(head *pb.AuditorTreeHead, auditorName string) erro
 	}
 	temp := &pb.FullAuditorTreeHead{TreeHead: head}
 	if auditorPublicKey, ok := t.config.AuditorKeys[auditorName]; !ok {
-		return fmt.Errorf("failed to get auditor public key for auditor: %s", auditorName)
+		return &tree.ErrInvalidTreeConfiguration{Field: fmt.Sprintf("%s auditor public key", auditorName), Message: fmt.Sprintf("failed to get auditor public key for auditor: %s", auditorName)}
 	} else if err := verifyAuditorTreeHead(t.config.Public(), temp, root, auditorPublicKey); err != nil {
 		return err
 	}

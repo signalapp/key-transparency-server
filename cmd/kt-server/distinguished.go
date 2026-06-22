@@ -7,16 +7,15 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/hashicorp/go-metrics"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	"github.com/signalapp/keytransparency/cmd/internal/util"
+	tr "github.com/signalapp/keytransparency/tree"
 	tpb "github.com/signalapp/keytransparency/tree/transparency/pb"
 )
 
@@ -38,10 +37,9 @@ func distinguishedLookup(updateHandler *KtUpdateHandler) time.Time {
 		})
 		metrics.IncrCounterWithLabels([]string{"distinguished_lookup"}, 1, []metrics.Label{successLabel(err)})
 		if err != nil {
-			errStr := err.Error()
-			if gprcError, ok := status.FromError(err); ok && gprcError.Code() == codes.NotFound {
+			if errors.Is(err, tr.ErrNotFound) {
 				return time.Time{}
-			} else if strings.HasSuffix(errStr, "tree is empty") {
+			} else if errors.Is(err, tr.ErrEmptyTree) {
 				return time.Time{}
 			}
 			util.Log().Warnf("Failed to lookup distinguished key: %v", err)

@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -43,6 +45,20 @@ func TestDistinguished_NilRequest(t *testing.T) {
 	h := KtQueryHandler{config: mockConfig.APIConfig, tx: mockTransparencyStore, accountDB: &accountDb}
 
 	_, err := h.Distinguished(context.Background(), nil)
+
+	if grpcError, ok := status.FromError(err); grpcError.Code() != codes.InvalidArgument || !ok {
+		t.Fatalf("Expected %v, got %v",
+			codes.InvalidArgument, err)
+	}
+}
+
+func TestDistinguishedV2_NilRequest(t *testing.T) {
+	mockConfig, _ := config.Read(mockConfigFile)
+	mockTransparencyStore := db.NewMemoryTransparencyStore()
+	accountDb := db.MockAccountDB{}
+	h := KtQueryHandler{config: mockConfig.APIConfig, tx: mockTransparencyStore, accountDB: &accountDb}
+
+	_, err := h.DistinguishedV2(context.Background(), nil)
 
 	if grpcError, ok := status.FromError(err); grpcError.Code() != codes.InvalidArgument || !ok {
 		t.Fatalf("Expected %v, got %v",
@@ -98,6 +114,36 @@ func TestSearch_InvalidArgument(t *testing.T) {
 			t.Fatalf("Expected %v, got %v",
 				codes.InvalidArgument, err)
 		}
+	}
+}
+
+func TestSearchV2_InvalidArgument(t *testing.T) {
+	mockConfig, _ := config.Read(mockConfigFile)
+	mockTransparencyStore := db.NewMemoryTransparencyStore()
+	accountDb := db.MockAccountDB{}
+	h := KtQueryHandler{config: mockConfig.APIConfig, tx: mockTransparencyStore, accountDB: &accountDb}
+
+	for _, p := range testInvalidSearchRequestParameters {
+		_, err := h.SearchV2(context.Background(), p.searchRequest)
+		grpcError, ok := status.FromError(err)
+		if grpcError.Code() != codes.InvalidArgument || !ok {
+			t.Fatalf("Expected %v, got %v",
+				codes.InvalidArgument, err)
+		}
+		var badRequest *errdetails.BadRequest
+		for _, detail := range grpcError.Details() {
+			if br, ok := detail.(*errdetails.BadRequest); ok {
+				badRequest = br
+				break
+			}
+		}
+
+		if badRequest == nil {
+			t.Fatal("expected BadRequest detail")
+		}
+		violation := badRequest.FieldViolations[0]
+		assert.NotEmpty(t, violation.Field)
+		assert.NotEmpty(t, violation.Description)
 	}
 }
 
@@ -417,6 +463,51 @@ func TestMonitor_InvalidRequests(t *testing.T) {
 				t.Fatalf("Expected error of type %v, got %v", p.expectedError, grpcError)
 			}
 		}
+	}
+}
+
+func TestMonitorV2_InvalidArgument(t *testing.T) {
+	mockConfig, _ := config.Read(mockConfigFile)
+	mockTransparencyStore := db.NewMemoryTransparencyStore()
+	accountDb := db.MockAccountDB{}
+	h := KtQueryHandler{config: mockConfig.APIConfig, tx: mockTransparencyStore, accountDB: &accountDb}
+
+	for _, p := range testInvalidMonitorParameters {
+		res, err := h.MonitorV2(context.Background(), p.monitorRequest)
+
+		if p.expectedError == codes.InvalidArgument {
+			grpcError, ok := status.FromError(err)
+
+			if grpcError.Code() != codes.InvalidArgument || !ok {
+				t.Fatalf("Expected %v, got %v",
+					codes.InvalidArgument, err)
+			}
+			var badRequest *errdetails.BadRequest
+			for _, detail := range grpcError.Details() {
+				if br, ok := detail.(*errdetails.BadRequest); ok {
+					badRequest = br
+					break
+				}
+			}
+
+			if badRequest == nil {
+				t.Fatal("expected BadRequest detail")
+			}
+			violation := badRequest.FieldViolations[0]
+			assert.NotEmpty(t, violation.Field)
+			assert.NotEmpty(t, violation.Description)
+		}
+
+		if p.expectedError == codes.PermissionDenied {
+			if err != nil {
+				t.Fatalf("Expected no error, got %v", err)
+			}
+
+			if res.GetPermissionDenied() == nil {
+				t.Fatalf("Expected permission denied response")
+			}
+		}
+
 	}
 }
 

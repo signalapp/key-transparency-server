@@ -7,6 +7,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/pprof"
@@ -18,6 +19,8 @@ import (
 
 	"github.com/signalapp/keytransparency/cmd/internal/util"
 	ktmetrics "github.com/signalapp/keytransparency/cmd/kt-server/metrics"
+	commonerrors "github.com/signalapp/keytransparency/common-errors"
+	"github.com/signalapp/keytransparency/tree"
 )
 
 func successLabel(err error) metrics.Label {
@@ -31,6 +34,31 @@ func auditorLabel(auditorName string) metrics.Label {
 func grpcStatusLabel(err error) metrics.Label {
 	grpcError, _ := status.FromError(err)
 	return metrics.Label{Name: "grpcStatus", Value: grpcError.Code().String()}
+}
+
+func outcomeLabel(err error) metrics.Label {
+	var invalidArg *commonerrors.ErrInvalidArgument
+	var invalidTreeConfiguration *tree.ErrInvalidTreeConfiguration
+	var permissionDenied *commonerrors.ErrPermissionDenied
+
+	var outcome string
+	switch {
+	case err == nil:
+		outcome = "success"
+	case errors.As(err, &invalidArg):
+		outcome = "invalid_arg"
+	case errors.As(err, &invalidTreeConfiguration):
+		outcome = "invalid_tree_configuration"
+	case errors.Is(err, tree.ErrEmptyTree):
+		outcome = "empty_tree"
+	case errors.As(err, &permissionDenied):
+		outcome = "permission_denied"
+	case errors.Is(err, errInternal):
+		outcome = "internal_error"
+	default:
+		outcome = "unknown_error"
+	}
+	return metrics.Label{Name: "outcome", Value: outcome}
 }
 
 func realLabel(real bool) metrics.Label {

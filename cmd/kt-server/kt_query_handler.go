@@ -9,6 +9,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"errors"
+	"fmt"
 	"math/rand"
 	"strings"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/hashicorp/go-metrics"
 
 	"github.com/signalapp/keytransparency/cmd/internal/config"
+	"github.com/signalapp/keytransparency/cmd/internal/util"
 	"github.com/signalapp/keytransparency/cmd/kt-server/pb"
 	"github.com/signalapp/keytransparency/cmd/shared"
 	commonerrors "github.com/signalapp/keytransparency/common-errors"
@@ -37,6 +39,27 @@ func (h *KtQueryHandler) Distinguished(ctx context.Context, req *pb.Distinguishe
 	res, err := h.distinguished(req)
 	grpcErr := toGrpcError(err)
 	return res, grpcErr
+}
+
+func (h *KtQueryHandler) DistinguishedV2(ctx context.Context, req *pb.DistinguishedRequest) (*pb.DistinguishedResponse, error) {
+	res, err := h.distinguished(req)
+	if err != nil {
+		switch errType := toErrType(err).(type) {
+		case *GrpcErr:
+			if errType.internal != nil {
+				util.Log().Errorf("unexpected DistinguishedV2 error: %v", errType.internal)
+			}
+			return nil, errType.err
+		case *PermissionDeniedErr:
+			// This should never happen
+			util.Log().Errorf("Unexpected permission denied error for distinguished key in key transparency service")
+			return nil, unavailable("unexpected permission denied error")
+		default:
+			return nil, unavailable(fmt.Sprintf("unexpected error for distinguished key: %v", err))
+		}
+	}
+
+	return res, nil
 }
 
 func (h *KtQueryHandler) distinguished(req *pb.DistinguishedRequest) (*pb.DistinguishedResponse, error) {
@@ -81,6 +104,46 @@ func (h *KtQueryHandler) Search(ctx context.Context, req *pb.SearchRequest) (*pb
 	// Achieve some minimum delay with jitter on the request to avoid a timing side-channel.
 	addRandomDelay(start, time.Now(), h.config.MinimumSearchDelay, h.config.JitterPercent, "search")
 	return res, grpcErr
+}
+
+func (h *KtQueryHandler) SearchV2(ctx context.Context, req *pb.SearchRequest) (*pb.SearchResponseV2, error) {
+	start := time.Now()
+	tree, err := h.config.NewTree(h.tx)
+	if err != nil {
+		return nil, unavailable(err.Error())
+	}
+
+	res, err := h.search(req, tree)
+
+	labels := []metrics.Label{outcomeLabel(err)}
+	metrics.MeasureSinceWithLabels([]string{"search_duration"}, start, labels)
+
+	// Achieve some minimum delay with jitter on the request to avoid a timing side-channel.
+	addRandomDelay(start, time.Now(), h.config.MinimumSearchDelay, h.config.JitterPercent, "search")
+
+	if err != nil {
+		switch errType := toErrType(err).(type) {
+		case *GrpcErr:
+			if errType.internal != nil {
+				util.Log().Errorf("unexpected SearchV2 error: %v", errType.internal)
+			}
+			return nil, errType.err
+		case *PermissionDeniedErr:
+			return &pb.SearchResponseV2{
+				Response: &pb.SearchResponseV2_PermissionDenied{
+					PermissionDenied: errType.PermissionDenied,
+				},
+			}, nil
+		default:
+			return nil, unavailable(fmt.Sprintf("unexpected search error: %v", err))
+		}
+	}
+
+	return &pb.SearchResponseV2{
+		Response: &pb.SearchResponseV2_SearchResponse{
+			SearchResponse: res,
+		},
+	}, nil
 }
 
 // Only ACI searches result in a `NotFound` or `PermissionDenied` response.
@@ -260,6 +323,41 @@ func (h *KtQueryHandler) Monitor(ctx context.Context, req *pb.MonitorRequest) (*
 	// Achieve some minimum delay with jitter on the request to avoid a timing side-channel.
 	addRandomDelay(start, time.Now(), h.config.MinimumMonitorDelay, h.config.JitterPercent, "monitor")
 	return res, grpcErr
+}
+
+func (h *KtQueryHandler) MonitorV2(ctx context.Context, req *pb.MonitorRequest) (*pb.MonitorResponseV2, error) {
+	start := time.Now()
+	res, err := h.monitor(req)
+	labels := []metrics.Label{outcomeLabel(err)}
+	metrics.MeasureSinceWithLabels([]string{"monitor_duration"}, start, labels)
+
+	// Achieve some minimum delay with jitter on the request to avoid a timing side-channel.
+	addRandomDelay(start, time.Now(), h.config.MinimumMonitorDelay, h.config.JitterPercent, "monitor")
+
+	if err != nil {
+		switch errType := toErrType(err).(type) {
+		case *GrpcErr:
+			if errType.internal != nil {
+				util.Log().Errorf("unexpected MonitorV2 error: %v", errType.internal)
+			}
+			return nil, errType.err
+		case *PermissionDeniedErr:
+			return &pb.MonitorResponseV2{
+				Response: &pb.MonitorResponseV2_PermissionDenied{
+					PermissionDenied: errType.PermissionDenied,
+				},
+			}, nil
+		default:
+			return nil, unavailable(fmt.Sprintf("unexpected monitor error: %v", err))
+		}
+
+	}
+
+	return &pb.MonitorResponseV2{
+		Response: &pb.MonitorResponseV2_MonitorResponse{
+			MonitorResponse: res,
+		},
+	}, nil
 }
 
 func (h *KtQueryHandler) monitor(req *pb.MonitorRequest) (*pb.MonitorResponse, error) {

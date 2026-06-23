@@ -10,6 +10,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,9 +22,10 @@ import (
 
 	"github.com/signalapp/keytransparency/cmd/internal/config"
 	"github.com/signalapp/keytransparency/cmd/internal/util"
+	"github.com/signalapp/keytransparency/cmd/kt-server/pb"
 	"github.com/signalapp/keytransparency/cmd/shared"
 	commonerrors "github.com/signalapp/keytransparency/common-errors"
-	"github.com/signalapp/keytransparency/tree/transparency/pb"
+	tpb "github.com/signalapp/keytransparency/tree/transparency/pb"
 )
 
 const (
@@ -97,13 +99,20 @@ func storeAuditorNameInterceptor(config *config.ServiceConfig) func(ctx context.
 	}
 }
 
+type IsPermissionDenied interface {
+	GetPermissionDenied() *pb.PermissionDenied
+}
+
 func metricsInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		start := time.Now()
 		res, err := handler(ctx, req)
 
+		r, ok := res.(IsPermissionDenied)
+		labels := []metrics.Label{{Name: "permission_denied",
+			Value: strconv.FormatBool(ok && r.GetPermissionDenied() != nil)}}
+
 		service, method, parseErr := parseFullMethodString(info.FullMethod)
-		var labels []metrics.Label
 		if parseErr != nil {
 			util.Log().Warnf("failed to parse full method name for %s: %v", info.FullMethod, parseErr)
 		} else {
@@ -123,8 +132,8 @@ func metricsInterceptor() grpc.UnaryServerInterceptor {
 
 		grpcStatus, _ := status.FromError(err)
 		grpcCode := grpcStatus.Code()
-		if grpcCode == codes.Unknown {
-			util.Log().Errorf("Unknown error from %s.%s: %v", service, method, grpcStatus)
+		if grpcCode == codes.Unknown || grpcCode == codes.Unavailable {
+			util.Log().Errorf("%v error from %s.%s: %v", grpcStatus, service, method, err)
 		}
 		labels = append(labels, metrics.Label{Name: "grpcStatus", Value: grpcCode.String()})
 
@@ -179,7 +188,7 @@ func validateAuthorizedHeaders(authorizedHeaders map[string][]string, md metadat
 	return matchedValue, nil
 }
 
-func isTombstoneUpdate(updateRequest *pb.UpdateRequest) bool {
+func isTombstoneUpdate(updateRequest *tpb.UpdateRequest) bool {
 	return bytes.Equal(updateRequest.GetValue(), tombstoneBytes)
 }
 

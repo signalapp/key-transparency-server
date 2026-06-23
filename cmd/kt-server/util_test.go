@@ -251,20 +251,19 @@ func TestGetSearchKeyType(t *testing.T) {
 	}
 }
 
-var testMetricsInterceptorErr = []codes.Code{
+var testMetricsInterceptorAuditErr = []codes.Code{
 	codes.InvalidArgument,
-	codes.PermissionDenied,
 	codes.Unavailable,
 	codes.OutOfRange,
 	codes.Unknown,
 	codes.FailedPrecondition,
 }
 
-func TestMetricsInterceptor_Err(t *testing.T) {
+func TestMetricsInterceptor_AuditErr(t *testing.T) {
 	util.SetLoggerInstance(&zerolog.Logger{})
 	serverInfo := &grpc.UnaryServerInfo{FullMethod: "/package.service/method"}
 
-	for _, code := range testMetricsInterceptorErr {
+	for _, code := range testMetricsInterceptorAuditErr {
 		interceptor := metricsInterceptor()
 
 		mockHandler := func(ctx context.Context, req any) (any, error) {
@@ -279,17 +278,109 @@ func TestMetricsInterceptor_Err(t *testing.T) {
 	}
 }
 
-func TestMetricsInterceptor_Success(t *testing.T) {
+var testMetricsInterceptorQueryErr = []struct {
+	grpcErr      error
+	expectedCode codes.Code
+}{
+	{fieldViolation("test_field", "test message"), codes.InvalidArgument},
+	{unavailable("unavailable"), codes.Unavailable},
+}
+
+func TestMetricsInterceptor_QueryErr(t *testing.T) {
+	util.SetLoggerInstance(&zerolog.Logger{})
+	serverInfo := &grpc.UnaryServerInfo{FullMethod: "/package.service/method"}
+
+	for _, p := range testMetricsInterceptorQueryErr {
+		interceptor := metricsInterceptor()
+
+		mockHandler := func(ctx context.Context, req any) (any, error) {
+			return nil, p.grpcErr
+		}
+
+		_, err := interceptor(context.Background(), nil, serverInfo, mockHandler)
+
+		if grpcStatus, ok := status.FromError(err); grpcStatus.Code() != p.expectedCode || !ok {
+			t.Fatalf("Expected Status.Code to be %v, got %v", p.expectedCode, grpcStatus)
+		}
+	}
+}
+
+func TestMetricsInterceptor_PermissionDenied(t *testing.T) {
 	serverInfo := &grpc.UnaryServerInfo{FullMethod: "/package.service/method"}
 
 	mockSearchHandler := func(ctx context.Context, req any) (any, error) {
-		return &pb.SearchResponse{}, nil
+		return &pb.SearchResponseV2{
+			Response: &pb.SearchResponseV2_PermissionDenied{
+				PermissionDenied: &pb.PermissionDenied{},
+			},
+		}, nil
 	}
 
 	res, err := metricsInterceptor()(context.Background(), nil, serverInfo, mockSearchHandler)
 
-	grpcStatus, ok := status.FromError(err)
-	if !ok || !assert.Equal(t, &pb.SearchResponse{}, res) {
+	if grpcStatus, ok := status.FromError(err); grpcStatus.Code() != codes.OK || !ok {
 		t.Fatalf("Expected Status.Code to be %v, got %v", codes.OK, grpcStatus)
+	}
+
+	if pd, ok := res.(IsPermissionDenied); !ok || pd.GetPermissionDenied() == nil {
+		t.Fatalf("Expected IsPermissionDenied to not be nil")
+	}
+
+	mockMonitorHandler := func(ctx context.Context, req any) (any, error) {
+		return &pb.MonitorResponseV2{
+			Response: &pb.MonitorResponseV2_PermissionDenied{
+				PermissionDenied: &pb.PermissionDenied{},
+			},
+		}, nil
+	}
+
+	res, err = metricsInterceptor()(context.Background(), nil, serverInfo, mockMonitorHandler)
+
+	if pd, ok := res.(IsPermissionDenied); !ok || pd.GetPermissionDenied() == nil {
+		t.Fatalf("Expected GetPermissionDenied to not be nil")
+	}
+
+	if grpcStatus, ok := status.FromError(err); grpcStatus.Code() != codes.OK || !ok {
+		t.Fatalf("Expected Status.Code to be %v, got %v", codes.OK, grpcStatus)
+	}
+}
+
+func TestMetricsInterceptor_Success(t *testing.T) {
+	serverInfo := &grpc.UnaryServerInfo{FullMethod: "/package.service/method"}
+
+	mockSearchHandler := func(ctx context.Context, req any) (any, error) {
+		return &pb.SearchResponseV2{
+			Response: &pb.SearchResponseV2_SearchResponse{
+				SearchResponse: &pb.SearchResponse{},
+			},
+		}, nil
+	}
+
+	res, err := metricsInterceptor()(context.Background(), nil, serverInfo, mockSearchHandler)
+
+	if grpcStatus, ok := status.FromError(err); grpcStatus.Code() != codes.OK || !ok {
+		t.Fatalf("Expected Status.Code to be %v, got %v", codes.OK, grpcStatus)
+	}
+
+	if pd, ok := res.(IsPermissionDenied); !ok || pd.GetPermissionDenied() != nil {
+		t.Fatalf("Expected GetPermissionDenied to be nil")
+	}
+
+	mockMonitorHandler := func(ctx context.Context, req any) (any, error) {
+		return &pb.MonitorResponseV2{
+			Response: &pb.MonitorResponseV2_MonitorResponse{
+				MonitorResponse: &pb.MonitorResponse{},
+			},
+		}, nil
+	}
+
+	res, err = metricsInterceptor()(context.Background(), nil, serverInfo, mockMonitorHandler)
+
+	if grpcStatus, ok := status.FromError(err); grpcStatus.Code() != codes.OK || !ok {
+		t.Fatalf("Expected Status.Code to be %v, got %v", codes.OK, grpcStatus)
+	}
+
+	if pd, ok := res.(IsPermissionDenied); !ok || pd.GetPermissionDenied() != nil {
+		t.Fatalf("Expected GetPermissionDenied to be nil")
 	}
 }

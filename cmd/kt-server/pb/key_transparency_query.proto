@@ -19,13 +19,22 @@ import "transparency.proto";
 // Clients use the verified tree head from looking up this key for future calls to the Search and Monitor endpoints.
 service KeyTransparencyQueryService {
   // An endpoint used by clients to look up the most recent `distinguished` key.
-  rpc Distinguished(DistinguishedRequest) returns (DistinguishedResponse) {}
+  rpc Distinguished(DistinguishedRequest) returns (DistinguishedResponse) {
+    option deprecated = true;
+  }
+  rpc DistinguishedV2(DistinguishedRequest) returns (DistinguishedResponse) {}
   // An endpoint used by clients to search for the given identifiers in the transparency log.
   // The server returns proof that the requested identifiers exist in the log.
-  rpc Search(SearchRequest) returns (SearchResponse) {}
+  rpc Search(SearchRequest) returns (SearchResponse) {
+    option deprecated = true;
+  }
+  rpc SearchV2(SearchRequest) returns (SearchResponseV2) {}
   // An endpoint that allows users to monitor a group of identifiers by returning proof that the log continues to be
   // constructed correctly in later entries for those identifiers.
-  rpc Monitor(MonitorRequest) returns (MonitorResponse) {}
+  rpc Monitor(MonitorRequest) returns (MonitorResponse) {
+    option deprecated = true;
+  }
+  rpc MonitorV2(MonitorRequest) returns (MonitorResponseV2) {}
 }
 
 // DistinguishedRequest looks up the most recent `distinguished` key in the transparency log.
@@ -65,12 +74,23 @@ message CondensedTreeSearchResponse {
   transparency.UpdateValue value = 4;
 }
 
+// Indicates that the client is not authorized to make the request because it did not provide
+// the correct set of data.
+message PermissionDenied {}
+
 // SearchResponse contains search proofs for each of the requested identifiers.
 message SearchResponse {
   transparency.FullTreeHead tree_head = 1;
   CondensedTreeSearchResponse aci = 2;
   optional CondensedTreeSearchResponse e164 = 3;
   optional CondensedTreeSearchResponse username_hash = 4;
+}
+
+message SearchResponseV2 {
+  oneof response {
+    SearchResponse search_response = 1;
+    PermissionDenied permission_denied = 2;
+  }
 }
 
 message MonitorRequest {
@@ -105,4 +125,11 @@ message MonitorResponse {
   optional transparency.MonitorProof username_hash = 3;
   optional transparency.MonitorProof e164 = 4;
   repeated bytes inclusion = 5;
+}
+
+message MonitorResponseV2 {
+  oneof response {
+    MonitorResponse monitor_response = 1;
+    PermissionDenied permission_denied = 2;
+  }
 }

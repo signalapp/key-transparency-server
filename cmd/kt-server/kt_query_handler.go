@@ -35,12 +35,6 @@ type KtQueryHandler struct {
 	pb.UnimplementedKeyTransparencyQueryServiceServer
 }
 
-func (h *KtQueryHandler) Distinguished(ctx context.Context, req *pb.DistinguishedRequest) (*pb.DistinguishedResponse, error) {
-	res, err := h.distinguished(req)
-	grpcErr := toGrpcError(err)
-	return res, grpcErr
-}
-
 func (h *KtQueryHandler) DistinguishedV2(ctx context.Context, req *pb.DistinguishedRequest) (*pb.DistinguishedResponse, error) {
 	res, err := h.distinguished(req)
 	if err != nil {
@@ -87,23 +81,6 @@ func (h *KtQueryHandler) distinguished(req *pb.DistinguishedRequest) (*pb.Distin
 		TreeHead:      resp.TreeHead,
 		Distinguished: convertToCondensedSearchResponse(resp),
 	}, nil
-}
-
-func (h *KtQueryHandler) Search(ctx context.Context, req *pb.SearchRequest) (*pb.SearchResponse, error) {
-	start := time.Now()
-	tree, err := h.config.NewTree(h.tx)
-	if err != nil {
-		return nil, toGrpcError(err)
-	}
-	res, err := h.search(req, tree)
-	grpcErr := toGrpcError(err)
-
-	labels := []metrics.Label{successLabel(grpcErr), grpcStatusLabel(grpcErr)}
-	metrics.MeasureSinceWithLabels([]string{"search_duration"}, start, labels)
-
-	// Achieve some minimum delay with jitter on the request to avoid a timing side-channel.
-	addRandomDelay(start, time.Now(), h.config.MinimumSearchDelay, h.config.JitterPercent, "search")
-	return res, grpcErr
 }
 
 func (h *KtQueryHandler) SearchV2(ctx context.Context, req *pb.SearchRequest) (*pb.SearchResponseV2, error) {
@@ -218,7 +195,7 @@ func aciSearch(req *pb.SearchRequest, tree *transparency.Tree) (*tpb.FullTreeHea
 		Consistency: consistency,
 	})
 
-	metrics.IncrCounterWithLabels([]string{"search_requests", "aci"}, 1, []metrics.Label{grpcStatusLabel(toGrpcError(err))})
+	metrics.IncrCounterWithLabels([]string{"search_requests", "aci"}, 1, []metrics.Label{outcomeLabel(err)})
 
 	if err != nil {
 		// There's no use case for distinguishing "not found" vs "permission denied"
@@ -249,7 +226,7 @@ func usernameHashSearch(req *pb.SearchRequest, tree *transparency.Tree) (*pb.Con
 		Consistency: &tpb.Consistency{},
 	})
 
-	metrics.IncrCounterWithLabels([]string{"search_requests", "username_hash"}, 1, []metrics.Label{grpcStatusLabel(toGrpcError(responseErr))})
+	metrics.IncrCounterWithLabels([]string{"search_requests", "username_hash"}, 1, []metrics.Label{outcomeLabel(responseErr)})
 
 	if responseErr != nil {
 		// A non-nil err should be returned except in the case where it's "not found".
@@ -290,7 +267,7 @@ func (h *KtQueryHandler) phoneNumberSearch(req *pb.SearchRequest, tree *transpar
 		Consistency: &tpb.Consistency{},
 	})
 
-	metrics.IncrCounterWithLabels([]string{"search_requests", "e164"}, 1, []metrics.Label{grpcStatusLabel(toGrpcError(responseErr))})
+	metrics.IncrCounterWithLabels([]string{"search_requests", "e164"}, 1, []metrics.Label{outcomeLabel(responseErr)})
 
 	var valueForComparison []byte
 	if responseErr != nil {
@@ -312,17 +289,6 @@ func (h *KtQueryHandler) phoneNumberSearch(req *pb.SearchRequest, tree *transpar
 	}
 
 	return convertToCondensedSearchResponse(phoneNumberResponse), nil
-}
-
-func (h *KtQueryHandler) Monitor(ctx context.Context, req *pb.MonitorRequest) (*pb.MonitorResponse, error) {
-	start := time.Now()
-	res, err := h.monitor(req)
-	grpcErr := toGrpcError(err)
-	labels := []metrics.Label{successLabel(grpcErr), grpcStatusLabel(grpcErr)}
-	metrics.MeasureSinceWithLabels([]string{"monitor_duration"}, start, labels)
-	// Achieve some minimum delay with jitter on the request to avoid a timing side-channel.
-	addRandomDelay(start, time.Now(), h.config.MinimumMonitorDelay, h.config.JitterPercent, "monitor")
-	return res, grpcErr
 }
 
 func (h *KtQueryHandler) MonitorV2(ctx context.Context, req *pb.MonitorRequest) (*pb.MonitorResponseV2, error) {

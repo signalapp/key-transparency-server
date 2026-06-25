@@ -20,7 +20,7 @@ func handleSearchTiming(client pb.KeyTransparencyQueryServiceClient) {
 	req := constructSearchRequest(args)
 
 	timeRequest(func() error {
-		_, err := client.Search(context.Background(), req)
+		_, err := client.SearchV2(context.Background(), req)
 		return err
 	}, samplingArgs)
 }

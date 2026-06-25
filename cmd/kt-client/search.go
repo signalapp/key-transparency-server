@@ -8,6 +8,7 @@ package main
 import (
 	"context"
 	"encoding/base64"
+	"os"
 
 	"github.com/signalapp/keytransparency/cmd/kt-server/pb"
 	"github.com/signalapp/keytransparency/cmd/shared"
@@ -37,8 +38,10 @@ func constructSearchRequest(args QueryArgs) *pb.SearchRequest {
 
 func handleSearch(client pb.KeyTransparencyQueryServiceClient) {
 	args := extractQueryArgs("search")
-	res, err := client.Search(context.Background(), constructSearchRequest(args))
+	searchResponseV2, err := client.SearchV2(context.Background(), constructSearchRequest(args))
 	checkErr("search request", err)
+
+	res := extractSearchResponse(searchResponseV2)
 
 	printFullTreeHead(res.TreeHead)
 	p.Printf("ACI search response: \n")
@@ -122,4 +125,18 @@ func createTreeSearchResponse(response *pb.CondensedTreeSearchResponse, treeHead
 		Opening:  response.Opening,
 		Value:    response.Value,
 	}
+}
+
+func extractSearchResponse(searchResponseV2 *pb.SearchResponseV2) *pb.SearchResponse {
+	if searchResponseV2.GetPermissionDenied() != nil {
+		_, _ = os.Stderr.WriteString("search permission denied")
+		os.Exit(1)
+	}
+
+	if searchResponseV2.GetSearchResponse() == nil {
+		_, _ = os.Stderr.WriteString("nil search response")
+		os.Exit(1)
+	}
+
+	return searchResponseV2.GetSearchResponse()
 }

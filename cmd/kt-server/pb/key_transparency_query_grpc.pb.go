@@ -24,11 +24,8 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	KeyTransparencyQueryService_Distinguished_FullMethodName   = "/kt_query.KeyTransparencyQueryService/Distinguished"
 	KeyTransparencyQueryService_DistinguishedV2_FullMethodName = "/kt_query.KeyTransparencyQueryService/DistinguishedV2"
-	KeyTransparencyQueryService_Search_FullMethodName          = "/kt_query.KeyTransparencyQueryService/Search"
 	KeyTransparencyQueryService_SearchV2_FullMethodName        = "/kt_query.KeyTransparencyQueryService/SearchV2"
-	KeyTransparencyQueryService_Monitor_FullMethodName         = "/kt_query.KeyTransparencyQueryService/Monitor"
 	KeyTransparencyQueryService_MonitorV2_FullMethodName       = "/kt_query.KeyTransparencyQueryService/MonitorV2"
 )
 
@@ -45,19 +42,13 @@ const (
 // Separately, the log also stores and periodically updates a fixed value known as the `distinguished` key.
 // Clients use the verified tree head from looking up this key for future calls to the Search and Monitor endpoints.
 type KeyTransparencyQueryServiceClient interface {
-	// Deprecated: Do not use.
 	// An endpoint used by clients to look up the most recent `distinguished` key.
-	Distinguished(ctx context.Context, in *DistinguishedRequest, opts ...grpc.CallOption) (*DistinguishedResponse, error)
 	DistinguishedV2(ctx context.Context, in *DistinguishedRequest, opts ...grpc.CallOption) (*DistinguishedResponse, error)
-	// Deprecated: Do not use.
 	// An endpoint used by clients to search for the given identifiers in the transparency log.
 	// The server returns proof that the requested identifiers exist in the log.
-	Search(ctx context.Context, in *SearchRequest, opts ...grpc.CallOption) (*SearchResponse, error)
 	SearchV2(ctx context.Context, in *SearchRequest, opts ...grpc.CallOption) (*SearchResponseV2, error)
-	// Deprecated: Do not use.
 	// An endpoint that allows users to monitor a group of identifiers by returning proof that the log continues to be
 	// constructed correctly in later entries for those identifiers.
-	Monitor(ctx context.Context, in *MonitorRequest, opts ...grpc.CallOption) (*MonitorResponse, error)
 	MonitorV2(ctx context.Context, in *MonitorRequest, opts ...grpc.CallOption) (*MonitorResponseV2, error)
 }
 
@@ -67,17 +58,6 @@ type keyTransparencyQueryServiceClient struct {
 
 func NewKeyTransparencyQueryServiceClient(cc grpc.ClientConnInterface) KeyTransparencyQueryServiceClient {
 	return &keyTransparencyQueryServiceClient{cc}
-}
-
-// Deprecated: Do not use.
-func (c *keyTransparencyQueryServiceClient) Distinguished(ctx context.Context, in *DistinguishedRequest, opts ...grpc.CallOption) (*DistinguishedResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(DistinguishedResponse)
-	err := c.cc.Invoke(ctx, KeyTransparencyQueryService_Distinguished_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
 }
 
 func (c *keyTransparencyQueryServiceClient) DistinguishedV2(ctx context.Context, in *DistinguishedRequest, opts ...grpc.CallOption) (*DistinguishedResponse, error) {
@@ -90,32 +70,10 @@ func (c *keyTransparencyQueryServiceClient) DistinguishedV2(ctx context.Context,
 	return out, nil
 }
 
-// Deprecated: Do not use.
-func (c *keyTransparencyQueryServiceClient) Search(ctx context.Context, in *SearchRequest, opts ...grpc.CallOption) (*SearchResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(SearchResponse)
-	err := c.cc.Invoke(ctx, KeyTransparencyQueryService_Search_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *keyTransparencyQueryServiceClient) SearchV2(ctx context.Context, in *SearchRequest, opts ...grpc.CallOption) (*SearchResponseV2, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SearchResponseV2)
 	err := c.cc.Invoke(ctx, KeyTransparencyQueryService_SearchV2_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-// Deprecated: Do not use.
-func (c *keyTransparencyQueryServiceClient) Monitor(ctx context.Context, in *MonitorRequest, opts ...grpc.CallOption) (*MonitorResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(MonitorResponse)
-	err := c.cc.Invoke(ctx, KeyTransparencyQueryService_Monitor_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -145,19 +103,13 @@ func (c *keyTransparencyQueryServiceClient) MonitorV2(ctx context.Context, in *M
 // Separately, the log also stores and periodically updates a fixed value known as the `distinguished` key.
 // Clients use the verified tree head from looking up this key for future calls to the Search and Monitor endpoints.
 type KeyTransparencyQueryServiceServer interface {
-	// Deprecated: Do not use.
 	// An endpoint used by clients to look up the most recent `distinguished` key.
-	Distinguished(context.Context, *DistinguishedRequest) (*DistinguishedResponse, error)
 	DistinguishedV2(context.Context, *DistinguishedRequest) (*DistinguishedResponse, error)
-	// Deprecated: Do not use.
 	// An endpoint used by clients to search for the given identifiers in the transparency log.
 	// The server returns proof that the requested identifiers exist in the log.
-	Search(context.Context, *SearchRequest) (*SearchResponse, error)
 	SearchV2(context.Context, *SearchRequest) (*SearchResponseV2, error)
-	// Deprecated: Do not use.
 	// An endpoint that allows users to monitor a group of identifiers by returning proof that the log continues to be
 	// constructed correctly in later entries for those identifiers.
-	Monitor(context.Context, *MonitorRequest) (*MonitorResponse, error)
 	MonitorV2(context.Context, *MonitorRequest) (*MonitorResponseV2, error)
 	mustEmbedUnimplementedKeyTransparencyQueryServiceServer()
 }
@@ -169,20 +121,11 @@ type KeyTransparencyQueryServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedKeyTransparencyQueryServiceServer struct{}
 
-func (UnimplementedKeyTransparencyQueryServiceServer) Distinguished(context.Context, *DistinguishedRequest) (*DistinguishedResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Distinguished not implemented")
-}
 func (UnimplementedKeyTransparencyQueryServiceServer) DistinguishedV2(context.Context, *DistinguishedRequest) (*DistinguishedResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DistinguishedV2 not implemented")
 }
-func (UnimplementedKeyTransparencyQueryServiceServer) Search(context.Context, *SearchRequest) (*SearchResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Search not implemented")
-}
 func (UnimplementedKeyTransparencyQueryServiceServer) SearchV2(context.Context, *SearchRequest) (*SearchResponseV2, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SearchV2 not implemented")
-}
-func (UnimplementedKeyTransparencyQueryServiceServer) Monitor(context.Context, *MonitorRequest) (*MonitorResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Monitor not implemented")
 }
 func (UnimplementedKeyTransparencyQueryServiceServer) MonitorV2(context.Context, *MonitorRequest) (*MonitorResponseV2, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method MonitorV2 not implemented")
@@ -209,24 +152,6 @@ func RegisterKeyTransparencyQueryServiceServer(s grpc.ServiceRegistrar, srv KeyT
 	s.RegisterService(&KeyTransparencyQueryService_ServiceDesc, srv)
 }
 
-func _KeyTransparencyQueryService_Distinguished_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(DistinguishedRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(KeyTransparencyQueryServiceServer).Distinguished(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: KeyTransparencyQueryService_Distinguished_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(KeyTransparencyQueryServiceServer).Distinguished(ctx, req.(*DistinguishedRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _KeyTransparencyQueryService_DistinguishedV2_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(DistinguishedRequest)
 	if err := dec(in); err != nil {
@@ -245,24 +170,6 @@ func _KeyTransparencyQueryService_DistinguishedV2_Handler(srv interface{}, ctx c
 	return interceptor(ctx, in, info, handler)
 }
 
-func _KeyTransparencyQueryService_Search_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SearchRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(KeyTransparencyQueryServiceServer).Search(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: KeyTransparencyQueryService_Search_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(KeyTransparencyQueryServiceServer).Search(ctx, req.(*SearchRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _KeyTransparencyQueryService_SearchV2_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(SearchRequest)
 	if err := dec(in); err != nil {
@@ -277,24 +184,6 @@ func _KeyTransparencyQueryService_SearchV2_Handler(srv interface{}, ctx context.
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(KeyTransparencyQueryServiceServer).SearchV2(ctx, req.(*SearchRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _KeyTransparencyQueryService_Monitor_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(MonitorRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(KeyTransparencyQueryServiceServer).Monitor(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: KeyTransparencyQueryService_Monitor_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(KeyTransparencyQueryServiceServer).Monitor(ctx, req.(*MonitorRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -325,24 +214,12 @@ var KeyTransparencyQueryService_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*KeyTransparencyQueryServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "Distinguished",
-			Handler:    _KeyTransparencyQueryService_Distinguished_Handler,
-		},
-		{
 			MethodName: "DistinguishedV2",
 			Handler:    _KeyTransparencyQueryService_DistinguishedV2_Handler,
 		},
 		{
-			MethodName: "Search",
-			Handler:    _KeyTransparencyQueryService_Search_Handler,
-		},
-		{
 			MethodName: "SearchV2",
 			Handler:    _KeyTransparencyQueryService_SearchV2_Handler,
-		},
-		{
-			MethodName: "Monitor",
-			Handler:    _KeyTransparencyQueryService_Monitor_Handler,
 		},
 		{
 			MethodName: "MonitorV2",

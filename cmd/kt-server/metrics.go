@@ -51,6 +51,8 @@ func outcomeLabel(err error) metrics.Label {
 		outcome = "invalid_tree_configuration"
 	case errors.Is(err, tree.ErrEmptyTree):
 		outcome = "empty_tree"
+	case errors.Is(err, tree.ErrNotFound):
+		outcome = "not_found"
 	case errors.As(err, &permissionDenied):
 		outcome = "permission_denied"
 	case errors.Is(err, errInternal):

@@ -18,7 +18,7 @@ func handleDistinguished(client pb.KeyTransparencyQueryServiceClient) {
 		x := uint64(*last)
 		req.Last = &x
 	}
-	res, err := client.Distinguished(context.Background(), req)
+	res, err := client.DistinguishedV2(context.Background(), req)
 	checkErr("distinguished request", err)
 
 	printFullTreeHead(res.TreeHead)

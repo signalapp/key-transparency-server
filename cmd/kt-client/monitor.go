@@ -9,6 +9,7 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"os"
 
 	"github.com/signalapp/keytransparency/cmd/kt-server/pb"
 	"github.com/signalapp/keytransparency/crypto/vrf"
@@ -57,13 +58,25 @@ func handleMonitor(client pb.KeyTransparencyQueryServiceClient) {
 	args := extractQueryArgs("monitor")
 
 	// First search the identifiers to get back the data necessary to make a monitor request
-	searchResponse, err := client.Search(context.Background(), constructSearchRequest(args))
+	searchResponseV2, err := client.SearchV2(context.Background(), constructSearchRequest(args))
 	checkErr("search identifiers before making a monitor request", err)
+	searchResponse := extractSearchResponse(searchResponseV2)
 	fmt.Println("Search request: OK")
 
 	vrfVerifier := newStore().PublicConfig().VrfKey
-	monitorResponse, err := client.Monitor(context.Background(), constructMonitorRequest(args, vrfVerifier, searchResponse))
+	monitorResponseV2, err := client.MonitorV2(context.Background(), constructMonitorRequest(args, vrfVerifier, searchResponse))
 	checkErr("monitor request", err)
+
+	if monitorResponseV2.GetPermissionDenied() != nil {
+		_, _ = os.Stderr.WriteString("monitor permission denied")
+		os.Exit(1)
+	}
+	monitorResponse := monitorResponseV2.GetMonitorResponse()
+
+	if monitorResponse == nil {
+		_, _ = os.Stderr.WriteString("nil monitor response")
+		os.Exit(1)
+	}
 
 	printFullTreeHead(monitorResponse.TreeHead)
 	p.Println("ACI monitor response:")

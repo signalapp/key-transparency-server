@@ -17,7 +17,7 @@ func handleMonitorTiming(client pb.KeyTransparencyQueryServiceClient) {
 	samplingArgs := extractSamplingArgs()
 
 	// First search the identifiers to get back the data necessary to make a monitor request
-	searchResponse, err := client.Search(context.Background(), constructSearchRequest(args))
+	searchResponseV2, err := client.SearchV2(context.Background(), constructSearchRequest(args))
 
 	checkErr("Search identifiers before making a monitor request", err)
 	fmt.Println("Search request: OK")
@@ -25,9 +25,10 @@ func handleMonitorTiming(client pb.KeyTransparencyQueryServiceClient) {
 
 	vrfVerifier := newStore().PublicConfig().VrfKey
 
+	searchResponse := extractSearchResponse(searchResponseV2)
 	req := constructMonitorRequest(args, vrfVerifier, searchResponse)
 	timeRequest(func() error {
-		_, err := client.Monitor(context.Background(), req)
+		_, err := client.MonitorV2(context.Background(), req)
 		return err
 	}, samplingArgs)
 }

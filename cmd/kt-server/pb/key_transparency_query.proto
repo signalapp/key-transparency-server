@@ -19,21 +19,12 @@ import "transparency.proto";
 // Clients use the verified tree head from looking up this key for future calls to the Search and Monitor endpoints.
 service KeyTransparencyQueryService {
   // An endpoint used by clients to look up the most recent `distinguished` key.
-  rpc Distinguished(DistinguishedRequest) returns (DistinguishedResponse) {
-    option deprecated = true;
-  }
   rpc DistinguishedV2(DistinguishedRequest) returns (DistinguishedResponse) {}
   // An endpoint used by clients to search for the given identifiers in the transparency log.
   // The server returns proof that the requested identifiers exist in the log.
-  rpc Search(SearchRequest) returns (SearchResponse) {
-    option deprecated = true;
-  }
   rpc SearchV2(SearchRequest) returns (SearchResponseV2) {}
   // An endpoint that allows users to monitor a group of identifiers by returning proof that the log continues to be
   // constructed correctly in later entries for those identifiers.
-  rpc Monitor(MonitorRequest) returns (MonitorResponse) {
-    option deprecated = true;
-  }
   rpc MonitorV2(MonitorRequest) returns (MonitorResponseV2) {}
 }
 

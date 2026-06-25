@@ -44,20 +44,6 @@ func TestDistinguished_NilRequest(t *testing.T) {
 	accountDb := db.MockAccountDB{}
 	h := KtQueryHandler{config: mockConfig.APIConfig, tx: mockTransparencyStore, accountDB: &accountDb}
 
-	_, err := h.Distinguished(context.Background(), nil)
-
-	if grpcError, ok := status.FromError(err); grpcError.Code() != codes.InvalidArgument || !ok {
-		t.Fatalf("Expected %v, got %v",
-			codes.InvalidArgument, err)
-	}
-}
-
-func TestDistinguishedV2_NilRequest(t *testing.T) {
-	mockConfig, _ := config.Read(mockConfigFile)
-	mockTransparencyStore := db.NewMemoryTransparencyStore()
-	accountDb := db.MockAccountDB{}
-	h := KtQueryHandler{config: mockConfig.APIConfig, tx: mockTransparencyStore, accountDB: &accountDb}
-
 	_, err := h.DistinguishedV2(context.Background(), nil)
 
 	if grpcError, ok := status.FromError(err); grpcError.Code() != codes.InvalidArgument || !ok {
@@ -103,21 +89,6 @@ var testInvalidSearchRequestParameters = []struct {
 }
 
 func TestSearch_InvalidArgument(t *testing.T) {
-	mockConfig, _ := config.Read(mockConfigFile)
-	mockTransparencyStore := db.NewMemoryTransparencyStore()
-	accountDb := db.MockAccountDB{}
-	h := KtQueryHandler{config: mockConfig.APIConfig, tx: mockTransparencyStore, accountDB: &accountDb}
-
-	for _, p := range testInvalidSearchRequestParameters {
-		_, err := h.Search(context.Background(), p.searchRequest)
-		if grpcError, ok := status.FromError(err); grpcError.Code() != codes.InvalidArgument || !ok {
-			t.Fatalf("Expected %v, got %v",
-				codes.InvalidArgument, err)
-		}
-	}
-}
-
-func TestSearchV2_InvalidArgument(t *testing.T) {
 	mockConfig, _ := config.Read(mockConfigFile)
 	mockTransparencyStore := db.NewMemoryTransparencyStore()
 	accountDb := db.MockAccountDB{}
@@ -449,24 +420,7 @@ var testInvalidMonitorParameters = []struct {
 		codes.PermissionDenied},
 }
 
-func TestMonitor_InvalidRequests(t *testing.T) {
-	mockConfig, _ := config.Read(mockConfigFile)
-	mockTransparencyStore := db.NewMemoryTransparencyStore()
-	accountDb := db.MockAccountDB{}
-	h := KtQueryHandler{config: mockConfig.APIConfig, tx: mockTransparencyStore, accountDB: &accountDb}
-
-	for _, p := range testInvalidMonitorParameters {
-		_, err := h.Monitor(context.Background(), p.monitorRequest)
-
-		if p.expectedError != codes.OK {
-			if grpcError, ok := status.FromError(err); grpcError.Code() != p.expectedError || !ok {
-				t.Fatalf("Expected error of type %v, got %v", p.expectedError, grpcError)
-			}
-		}
-	}
-}
-
-func TestMonitorV2_InvalidArgument(t *testing.T) {
+func TestMonitor_InvalidArgument(t *testing.T) {
 	mockConfig, _ := config.Read(mockConfigFile)
 	mockTransparencyStore := db.NewMemoryTransparencyStore()
 	accountDb := db.MockAccountDB{}

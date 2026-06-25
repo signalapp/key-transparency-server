@@ -28,35 +28,6 @@ var (
 	}
 )
 
-// toGrpcError is used by KeyTransparencyAuditorService and the non-V2 RPCs on KeyTransparencyQueryService
-func toGrpcError(err error) error {
-	var invalidArg *commonerrors.ErrInvalidArgument
-	var invalidTreeConfiguration *tree.ErrInvalidTreeConfiguration
-	var permissionDenied *commonerrors.ErrPermissionDenied
-	var auditorSignatureVerificationFailed *tree.ErrAuditorSignatureVerificationFailed
-
-	switch {
-	case err == nil:
-		return nil
-	case errors.As(err, &invalidArg):
-		return status.Error(codes.InvalidArgument, invalidArg.Error())
-	case errors.As(err, &invalidTreeConfiguration):
-		return status.Error(codes.FailedPrecondition, invalidTreeConfiguration.Error())
-	case errors.As(err, &permissionDenied):
-		return status.Error(codes.PermissionDenied, permissionDenied.Error())
-	case errors.Is(err, tree.ErrEmptyTree):
-		return status.Error(codes.FailedPrecondition, err.Error())
-	case errors.As(err, &auditorSignatureVerificationFailed):
-		return status.Error(codes.FailedPrecondition, auditorSignatureVerificationFailed.Error())
-	case errors.Is(err, tree.ErrOutOfRange):
-		return status.Error(codes.OutOfRange, err.Error())
-	case errors.Is(err, errInternal):
-		return status.Error(codes.Internal, err.Error())
-	default:
-		return status.Error(codes.Unknown, err.Error())
-	}
-}
-
 // toErrType is used by the V2 RPCs on KeyTransparencyQueryService
 func toErrType(err error) ErrType {
 	var invalidArg *commonerrors.ErrInvalidArgument

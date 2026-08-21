@@ -96,7 +96,7 @@ func handleUpdate(client pb.KeyTransparencyTestServiceClient) {
 		// so we nullify these fields.
 		if *last != -1 {
 			req.Consistency = nil
-			res.TreeHead.Last = nil
+			removeConsistencyProofsForStatelessVerification(res.TreeHead)
 		}
 		if err := transparency.VerifyUpdate(newStore(), req, res); err != nil {
 			p.Printf("Verification failed: %v\n", err)

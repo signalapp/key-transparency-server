@@ -69,6 +69,7 @@ func (h *KtQueryHandler) distinguished(req *pb.DistinguishedRequest) (*pb.Distin
 	searchReq := &tpb.TreeSearchRequest{
 		SearchKey: []byte(distinguishedSearchKey),
 		Consistency: &tpb.Consistency{
+			Last:          req.Last,
 			Distinguished: req.Last,
 		},
 	}

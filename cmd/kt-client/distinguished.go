@@ -31,6 +31,11 @@ func handleDistinguished(client pb.KeyTransparencyQueryServiceClient) {
 	if *configFile == "" {
 		p.Printf("Verification skipped\n")
 	} else {
+		if *last != -1 {
+			// Verifying the consistency proof would require persistent state, which kt-client doesn't have,
+			// so we nullify these fields.
+			removeConsistencyProofsForStatelessVerification(res.TreeHead)
+		}
 		if err := transparency.VerifySearch(newStore(), createTreeSearchRequest([]byte("distinguished")), createTreeSearchResponse(res.Distinguished, res.TreeHead)); err != nil {
 			p.Printf("Verification failed: %v\n", err)
 		} else {
